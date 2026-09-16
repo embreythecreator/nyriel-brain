@@ -6,5 +6,5 @@ Nyriel Brain is a **generated sibling** of Seraphiel Brain (embreythecreator/ser
 |---|---|
 | Source tag | `seraphim-cut-base-2026-09-15` |
 | Source commit | `1c0fbfcb5b276cc99689dec271243e409bb3d726` |
-| Rebranded tree | `f80f0de0ed383a11e5308f6abc4fec3fc5b29001` |
+| Rebranded tree | `a5cf9d82882fdc4c52a363db91ee453edd54553c` |
 | Cut on | 2026-09-16 |
