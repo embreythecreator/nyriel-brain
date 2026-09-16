@@ -1,0 +1,1 @@
+# Nyriel plugins package

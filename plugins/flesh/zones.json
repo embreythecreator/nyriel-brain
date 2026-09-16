@@ -1,0 +1,11 @@
+{
+  "_comment": "Territory gates for C-class handoff sinews. Sinews absent from this file are unrestricted. bbox = [min_lat, min_lon, max_lat, max_lon]. Waymo areas are coarse metro boxes — refine when Word grows a serviceability domain.",
+  "sinews": {
+    "waymo": [
+      { "name": "Phoenix metro", "bbox": [33.20, -112.40, 33.80, -111.60] },
+      { "name": "San Francisco", "bbox": [37.70, -122.52, 37.83, -122.35] },
+      { "name": "Los Angeles", "bbox": [33.90, -118.55, 34.20, -118.15] },
+      { "name": "Austin", "bbox": [30.15, -97.90, 30.45, -97.60] }
+    ]
+  }
+}

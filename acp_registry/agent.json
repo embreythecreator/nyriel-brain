@@ -1,0 +1,16 @@
+{
+  "id": "nyriel-brain",
+  "name": "Nyriel Brain",
+  "version": "0.19.0",
+  "description": "Self-improving open-source AI agent by Nyriel with ACP editor integration, persistent memory, skills, and rich tool support.",
+  "repository": "https://github.com/embreythecreator/nyriel-brain",
+  "website": "https://nyriel-brain.embreythecreator.com/docs/user-guide/features/acp",
+  "authors": ["Nyriel"],
+  "license": "MIT",
+  "distribution": {
+    "uvx": {
+      "package": "nyriel-brain[acp]==0.19.0",
+      "args": ["nyriel-acp"]
+    }
+  }
+}

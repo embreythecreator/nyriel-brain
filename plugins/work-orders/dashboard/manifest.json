@@ -1,0 +1,8 @@
+{
+  "name": "work-orders",
+  "label": "Work Orders",
+  "description": "PromptIR compiler edge — analyze and refine operator notes into prompts tailored to Nyriel, with live skill recommendations",
+  "icon": "ScrollText",
+  "version": "1.0.0",
+  "api": "plugin_api.py"
+}

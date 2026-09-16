@@ -1,0 +1,5 @@
+name: word
+version: 1.0.0
+description: "Word — the angel's memory organ (headless notebook store: Postgres+pgvector, Ward-authenticated REST). Durable facts + notebook-scoped recall."
+pip_dependencies:
+  - requests

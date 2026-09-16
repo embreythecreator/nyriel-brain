@@ -1,0 +1,10 @@
+name: flesh
+version: 0.1.0
+description: "Flesh — the organ through which an angel acts in meatspace. Routes typed move_person/move_object/make_object/perform_physical_task/perform_digital_task requests to third-party Sinew adapters (DoorDash Drive, Uber Direct, Prodigi, Printful, MTurk, Transit deeplinks). Every dispatch is T3: approval-gated via FleshApprovalStore, /flesh approve in Face. Opt-in via plugins.enabled — this plugin spends real money and dispatches real humans."
+author: embreythecreator
+kind: standalone
+provides_tools:
+  - flesh_quote
+  - flesh_dispatch
+  - flesh_status
+  - flesh_cancel
