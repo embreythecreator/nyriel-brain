@@ -140,6 +140,7 @@ except ImportError:
     web = None  # type: ignore[assignment]
 
 from gateway.config import Platform, PlatformConfig
+from gateway.oblivion_identity import principal_for, verify_access_token
 from gateway.platforms import api_server_room_dispatch as _room_dispatch
 from gateway.platforms import api_server_room_grants as _room_grants
 from gateway.platforms import api_server_runs as _api_runs
@@ -1820,6 +1821,8 @@ class APIServerAdapter(BasePlatformAdapter):
             raw_port = os.getenv("API_SERVER_PORT", str(DEFAULT_PORT))
         self._port: int = _coerce_port(raw_port, DEFAULT_PORT)
         self._api_key: str = extra.get("key", _get_scoped_secret("API_SERVER_KEY", ""))
+        # WO-BRAIN/IDENTITY-1: a 0blivion.io access token is a second acceptable Bearer.
+        self._oblivion_jwt_secret: str = _get_scoped_secret("OBLIVION_JWT_SECRET", "")
         self._cors_origins: tuple[str, ...] = self._parse_cors_origins(
             extra.get("cors_origins", os.getenv("API_SERVER_CORS_ORIGINS", "")),
         )
@@ -2259,16 +2262,33 @@ class APIServerAdapter(BasePlatformAdapter):
             )
 
         auth_header = request.headers.get("Authorization", "")
-        if auth_header.startswith("Bearer "):
-            token = auth_header[7:].strip()
-            # Compare as bytes: ``hmac.compare_digest`` raises TypeError on a
-            # str containing non-ASCII characters, and ``token`` is the raw
-            # client-supplied header. A stray non-ASCII byte in the key would
-            # otherwise crash this handler (500) instead of returning a clean
-            # 401. Encoding both sides keeps the timing-safe comparison and
-            # matches web_server.py's dashboard-token check.
-            if hmac.compare_digest(token.encode(), expected_key.encode()):
-                return None  # Auth OK
+        token = auth_header[7:].strip() if auth_header.startswith("Bearer ") else ""
+        # Compare as bytes: ``hmac.compare_digest`` raises TypeError on a
+        # str containing non-ASCII characters, and ``token`` is the raw
+        # client-supplied header. Encoding both sides keeps the timing-safe
+        # comparison and matches web_server.py's dashboard-token check.
+        if token and hmac.compare_digest(token.encode(), expected_key.encode()):
+            return None  # Ward key: the Face and other first-party organs.
+
+        # WO-BRAIN/IDENTITY-1: a 0blivion.io access token (HS256, shared OBLIVION_JWT_SECRET).
+        # Unset secret = branch disabled, behaviour identical to before.
+        claims = verify_access_token(token, self._oblivion_jwt_secret) if token and self._oblivion_jwt_secret else None
+        principal = ""
+        if claims is not None:
+            try:
+                principal = principal_for(claims)
+            except ValueError:
+                claims = None
+        if claims is not None:
+            if not self._oblivion_entitled(claims):
+                logger.warning("API server rejected 0blivion.io principal %s: not entitled; %s", principal, self._request_audit_log_suffix(request))
+                return web.json_response(
+                    {"error": {"message": "0blivion.io subscription required", "type": "gateway_auth_error", "code": "oblivion_not_entitled"}},
+                    status=402,
+                )
+            request["oblivion_principal"] = principal
+            request["oblivion_claims"] = claims
+            return None
 
         logger.warning(
             "API server rejected invalid API key: %s",
@@ -2278,6 +2298,25 @@ class APIServerAdapter(BasePlatformAdapter):
             {"error": {"message": "Invalid gateway API key (API_SERVER_KEY)", "type": "gateway_auth_error", "code": "gateway_auth_failed"}},
             status=401,
         )
+
+    def _oblivion_entitled(self, claims: dict) -> bool:
+        """Paid/unpaid gate for 0blivion.io principals.
+
+        ponytail: always True until the billing plugin is chosen (WO-FACE/INVITE-1 /
+        wordpress-billing-authority-ruling). When it lands, read the entitlement
+        claims the plugin adds (plan/status/angels/expires) and return False for
+        lapsed accounts; the 402 above is already wired.
+        """
+        return True
+
+    def _oblivion_scoped_session_id(self, request: "web.Request", raw_session_id: str) -> str:
+        """Pin a 0blivion.io caller's session id to its principal so a guessed id
+        can only reach that user's own conversations. Ward-key callers pass through."""
+        principal = request.get("oblivion_principal") if hasattr(request, "get") else None
+        if not principal:
+            return raw_session_id
+        local = (raw_session_id or "").split(":")[-1].strip() or "default"
+        return f"oblivion:{principal}:{local}"
 
     @staticmethod
     def _normalize_callback_platform(value: str) -> str:
@@ -5915,6 +5954,8 @@ class APIServerAdapter(BasePlatformAdapter):
         # read arbitrary session history by guessing/enumerating session IDs.
         provided_session_id = request.headers.get("X-Nyriel-Session-Id", "").strip()
         if provided_session_id:
+            # WO-BRAIN/IDENTITY-1: 0blivion.io callers are pinned to oblivion:wp-<sub>:<local>.
+            provided_session_id = self._oblivion_scoped_session_id(request, provided_session_id)
             if not self._api_key:
                 logger.warning(
                     "Session continuation via X-Nyriel-Session-Id rejected: "
