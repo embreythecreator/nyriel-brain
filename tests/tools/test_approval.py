@@ -864,6 +864,37 @@ class TestWebhookApprovalExclusion:
         assert result["approved"] is False
         assert "approvals.unattended_mode" in result["message"]
 
+    def test_api_server_with_notify_listener_still_asks(self, monkeypatch):
+        """/v1/runs registers a notify callback: that session IS attended, so
+        the approval must reach the listener, not the unattended deny."""
+        import tools.approval as approval_mod
+        from tools.approval import (
+            check_all_command_guards,
+            register_gateway_notify,
+            unregister_gateway_notify,
+        )
+
+        self._isolate(monkeypatch)
+        monkeypatch.setattr(approval_mod, "_get_approval_mode", lambda: "manual")
+        monkeypatch.delenv("NYRIEL_CRON_SESSION", raising=False)
+        monkeypatch.delenv("NYRIEL_GATEWAY_SESSION", raising=False)
+        monkeypatch.delenv("NYRIEL_INTERACTIVE", raising=False)
+        monkeypatch.setenv("NYRIEL_EXEC_ASK", "1")
+        monkeypatch.setenv("NYRIEL_SESSION_PLATFORM", "api_server")
+        monkeypatch.setenv("NYRIEL_SESSION_KEY", "test-api-run-session")
+        seen = []
+        monkeypatch.setattr(
+            approval_mod, "_await_gateway_decision",
+            lambda key, cb, data, surface: seen.append(data) or {"resolved": True, "choice": "once"},
+        )
+        register_gateway_notify("test-api-run-session", lambda data: None)
+        try:
+            result = check_all_command_guards("sudo systemctl restart nginx", "local")
+        finally:
+            unregister_gateway_notify("test-api-run-session")
+        assert seen, "approval never reached the registered listener"
+        assert result["approved"] is True
+
     def test_execute_code_denied_on_unattended_platform(self, monkeypatch):
         """execute_code is denied instantly on unattended platforms (parity with cron)."""
         from tools.approval import check_execute_code_guard

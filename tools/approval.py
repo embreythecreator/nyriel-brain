@@ -288,7 +288,12 @@ def _is_unattended_platform_approval_context() -> bool:
     contexts blocks the session for the full approval timeout (60-300s) and
     then fails closed anyway — the deadlock in #37284/#87509.
     """
-    return _get_session_platform() in _UNATTENDED_APPROVAL_PLATFORMS
+    if _get_session_platform() not in _UNATTENDED_APPROVAL_PLATFORMS:
+        return False
+    # A registered notify listener (/v1/runs streams approval.request and
+    # resolves via POST /v1/runs/{id}/approval) makes the session attended.
+    with _lock:
+        return get_current_session_key() not in _gateway_notify_cbs
 
 
 def _exec_ask_enabled() -> bool:
