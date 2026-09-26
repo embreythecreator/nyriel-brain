@@ -28,6 +28,7 @@ space.* API brief (the JS surface payload.code runs against):
 - space.current.readWidget(name) / seeWidget(name) / patchWidget(id, { edits }) / renderWidget({ id, name, cols, rows, renderer }) — renderer shape: async (parent, currentSpace, context) => { ... }; use await context.import("scripts/foo.js") for shared modules
 - space.spaces.listSpaces() / openSpace(id)
 - space.browser.open(url) and space.browser.* for external sites (load the browser-control skill via space.skills.load("browser-control") first when needed)
+- space.moviola.state() / action(name, args) / seek(seconds) / importBundle(path) — drive the operator's open Moviola dock (their editor, live); load the moviola-organ skill first and read state() before acting
 - space.skills.load(catalogId) — load a skill once, then use what it taught
 - space.utils.yaml.parse(text) / stringify(object)"""
 
