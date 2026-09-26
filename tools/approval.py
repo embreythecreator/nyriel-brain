@@ -291,6 +291,17 @@ def _is_unattended_platform_approval_context() -> bool:
     return _get_session_platform() in _UNATTENDED_APPROVAL_PLATFORMS
 
 
+def _exec_ask_enabled() -> bool:
+    """NYRIEL_EXEC_ASK, minus unattended platforms.
+
+    start_gateway() sets the flag process-wide, so without this an api_server
+    (Face) turn skipped the unattended_mode gate and queued a pending_approval
+    for a card no client renders — the agent then told the user to approve a
+    card that never existed.
+    """
+    return env_var_enabled("NYRIEL_EXEC_ASK") and not _is_unattended_platform_approval_context()
+
+
 def _is_single_query_approval_context() -> bool:
     """True when the current approval decision is from a single-query (-q) session.
 
@@ -3912,7 +3923,7 @@ def _run_approval_gate(
         )
         return {"approved": True, "message": None}
 
-    if is_gateway or env_var_enabled("NYRIEL_EXEC_ASK"):
+    if is_gateway or _exec_ask_enabled():
         # Interactive gateway round-trip when a notify callback is
         # registered for this session (Discord/Telegram/Slack embed +
         # buttons, same mechanism as check_dangerous_command). Blocks the
@@ -4787,7 +4798,7 @@ def check_all_command_guards(command: str, env_type: str,
     approval_callback = _resolve_cli_approval_callback(approval_callback)
     is_cli = _is_interactive_cli()
     is_gateway = _is_gateway_approval_context()
-    is_ask = env_var_enabled("NYRIEL_EXEC_ASK")
+    is_ask = _exec_ask_enabled()
 
     # Single-query (-q) sessions export NYRIEL_INTERACTIVE=1 but have no user
     # to answer approval prompts — an unanswered prompt just waits the full
@@ -5478,7 +5489,7 @@ def check_execute_code_guard(code: str, env_type: str,
         return {"approved": True, "message": None}
 
     is_gateway = _is_gateway_approval_context()
-    is_ask = env_var_enabled("NYRIEL_EXEC_ASK")
+    is_ask = _exec_ask_enabled()
     is_cli = _is_interactive_cli()
     approval_callback = _resolve_cli_approval_callback()
 
