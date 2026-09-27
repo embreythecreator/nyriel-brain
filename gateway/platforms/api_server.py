@@ -1865,6 +1865,10 @@ class APIServerAdapter(BasePlatformAdapter):
             self,
             store_factory=RunIdempotencyStore,
         )
+        # WO-FACE/APPROVAL-1: live chat streams that opted into approval
+        # cards, keyed by (scoped) session id — the id is also the approval
+        # key those turns bind, so "This session" means this conversation.
+        self._chat_approval_streams: Dict[str, Dict[str, Any]] = {}
         self._session_db: Optional[Any] = None  # Lazy-init SessionDB for session continuity
         self._session_dbs: Dict[str, Any] = {}
         self._session_db_cache_lock = threading.Lock()
@@ -2598,6 +2602,7 @@ class APIServerAdapter(BasePlatformAdapter):
             ("POST", "/api/sessions/{session_id}/chat/stream", self._handle_session_chat_stream),
             ("POST", "/api/sessions/{session_id}/model", self._handle_session_model_lock),
             ("POST", "/v1/chat/completions", self._handle_chat_completions),
+            ("POST", "/v1/sessions/{session_id}/approval", self._handle_session_approval),
             ("POST", "/v1/responses", self._handle_responses),
             ("GET", "/v1/responses/{response_id}", self._handle_get_response),
             ("DELETE", "/v1/responses/{response_id}", self._handle_delete_response),
@@ -3714,6 +3719,7 @@ class APIServerAdapter(BasePlatformAdapter):
                 "run_approval_response": True,
                 "tool_progress_events": True,
                 "approval_events": True,
+                "chat_approval_events": True,
                 "session_resources": True,
                 "model_options": True,
                 "session_chat": True,
@@ -3768,6 +3774,7 @@ class APIServerAdapter(BasePlatformAdapter):
                 "run_status": {"method": "GET", "path": "/v1/runs/{run_id}"},
                 "run_events": {"method": "GET", "path": "/v1/runs/{run_id}/events"},
                 "run_approval": {"method": "POST", "path": "/v1/runs/{run_id}/approval"},
+                "session_approval": {"method": "POST", "path": "/v1/sessions/{session_id}/approval"},
                 "run_steer": {"method": "POST", "path": "/v1/runs/{run_id}/steer"},
                 "run_stop": {"method": "POST", "path": "/v1/runs/{run_id}/stop"},
                 "skills": {"method": "GET", "path": "/v1/skills"},
@@ -5864,6 +5871,98 @@ class APIServerAdapter(BasePlatformAdapter):
             "session_id": session_id,
             "runtime": runtime,
         })
+    async def _handle_session_approval(self, request: "web.Request") -> "web.Response":
+        """POST /v1/sessions/{session_id}/approval — answer an approval card
+        raised on an opted-in /v1/chat/completions stream (WO-FACE/APPROVAL-1).
+
+        Body ``{choice, request_id}``. The session id is pinned to the caller's
+        principal (IDENTITY-1) and must match the principal that opened the
+        stream, so a key alone cannot answer another user's card.
+        """
+        auth_err = self._check_auth(request)
+        if auth_err:
+            return auth_err
+
+        raw_session_id = request.match_info["session_id"]
+        session_id = self._oblivion_scoped_session_id(request, raw_session_id)
+        stream = self._chat_approval_streams.get(session_id)
+        if stream is None or stream["principal"] != request.get("oblivion_principal"):
+            return web.json_response(
+                _openai_error(
+                    f"No live approval stream for session: {raw_session_id}",
+                    code="session_not_found",
+                ),
+                status=404,
+            )
+
+        try:
+            body = await request.json()
+        except Exception:
+            return web.json_response(_openai_error("Invalid JSON"), status=400)
+        if not isinstance(body, dict):
+            return web.json_response(_openai_error("Invalid JSON"), status=400)
+
+        choice = str(body.get("choice", "")).strip().lower()
+        raw_request_id = body.get("request_id")
+        request_id = raw_request_id.strip() if isinstance(raw_request_id, str) else ""
+        if not request_id or len(request_id) > 256:
+            return web.json_response(
+                _openai_error(
+                    "Approval request_id is required.",
+                    code="approval_request_required",
+                ),
+                status=400,
+            )
+
+        from tools.approval import list_gateway_approvals, resolve_gateway_approval
+
+        pending = next(
+            (d for d in list_gateway_approvals(session_id) if d.get("request_id") == request_id),
+            None,
+        )
+        if pending is None:
+            return web.json_response(
+                _openai_error(
+                    f"No pending approval {request_id} for session: {raw_session_id}",
+                    code="approval_not_pending",
+                ),
+                status=409,
+            )
+        allowed = _approval_event_choices(
+            smart_denied=bool(pending.get("smart_denied")),
+            allow_session=pending.get("allow_session") is not False,
+            allow_permanent=pending.get("allow_permanent") is not False,
+        )
+        if choice not in allowed:
+            return web.json_response(
+                _openai_error(
+                    "Invalid approval choice; expected one of: " + ", ".join(allowed),
+                    code="invalid_approval_choice",
+                ),
+                status=400,
+            )
+
+        # Record before resolving: the stream writer settles the card the
+        # moment the entry leaves the queue and reads the choice from here.
+        stream["answered"][request_id] = choice
+        resolved = resolve_gateway_approval(session_id, choice, request_id=request_id)
+        if resolved <= 0:
+            stream["answered"].pop(request_id, None)
+            return web.json_response(
+                _openai_error(
+                    f"No pending approval {request_id} for session: {raw_session_id}",
+                    code="approval_not_pending",
+                ),
+                status=409,
+            )
+        return web.json_response({
+            "object": "nyriel.session.approval_response",
+            "session_id": raw_session_id,
+            "request_id": request_id,
+            "choice": choice,
+            "resolved": resolved,
+        })
+
     @_admit_api_agent_request
     async def _handle_chat_completions(self, request: "web.Request") -> "web.Response":
         """POST /v1/chat/completions — OpenAI Chat Completions format."""
@@ -6244,6 +6343,40 @@ class APIServerAdapter(BasePlatformAdapter):
                     "ts": time.time(),
                 }))
 
+            # WO-FACE/APPROVAL-1: an opted-in stream (X-Nyriel-Approvals:
+            # card) registers a notify listener, which makes the turn attended:
+            # a flagged command blocks on _await_gateway_decision and the card
+            # rides this stream as ``event: nyriel.approval``. Without the
+            # header the turn keeps the unattended deny.
+            approval_stream = None
+            _approval_notify = None
+            if request.headers.get("X-Nyriel-Approvals", "").strip().lower() == "card":
+                approval_stream = {
+                    "principal": request.get("oblivion_principal"),
+                    "answered": {},
+                    "pending": set(),
+                }
+                self._chat_approval_streams[session_id] = approval_stream
+
+                def _approval_notify(approval_data):
+                    from tools.approval import _get_approval_timeout
+
+                    event = dict(approval_data or {})
+                    if "command" in event:
+                        from gateway.run import _redact_approval_command
+
+                        event["command"] = _redact_approval_command(event.get("command"))
+                    event.update({
+                        "choices": _approval_event_choices(
+                            smart_denied=bool(event.get("smart_denied")),
+                            allow_session=event.get("allow_session") is not False,
+                            allow_permanent=event.get("allow_permanent") is not False,
+                        ),
+                        "timeout_s": _get_approval_timeout(),
+                        "timestamp": time.time(),
+                    })
+                    _stream_q.put_threadsafe(("__approval__", event))
+
             # Start agent in background.  agent_ref is a mutable container
             # so the SSE writer can interrupt the agent on client disconnect.
             #
@@ -6267,17 +6400,25 @@ class APIServerAdapter(BasePlatformAdapter):
                 agent_ref=agent_ref,
                 gateway_session_key=gateway_session_key,
                 turn_kind=turn_kind,
+                approval_notify=_approval_notify,
                 **agent_overrides,
                 route=route,
             ))
             # Ensure SSE drain loops can terminate without relying on polling
             # agent_task.done(), which can race with queue timeout checks.
             agent_task.add_done_callback(lambda _fut: _stream_q.put_nowait(None))
+            if approval_stream is not None:
+                def _drop_approval_stream(_fut, _sid=session_id, _st=approval_stream):
+                    if self._chat_approval_streams.get(_sid) is _st:
+                        self._chat_approval_streams.pop(_sid, None)
+
+                agent_task.add_done_callback(_drop_approval_stream)
 
             return await self._write_sse_chat_completion(
                 request, completion_id, model_name, created, _stream_q,
                 agent_task, agent_ref, session_id=session_id,
                 gateway_session_key=gateway_session_key,
+                approval_stream=approval_stream,
                 # Follow-up suggestions need the prompt as well as the answer,
                 # and the SSE writer is a separate method with no view of the
                 # request body. Passed explicitly rather than re-parsed.
@@ -6478,6 +6619,7 @@ class APIServerAdapter(BasePlatformAdapter):
         self, request: "web.Request", completion_id: str, model: str,
         created: int, stream_q, agent_task, agent_ref=None, session_id: str = None,
         gateway_session_key: str = None, user_message: str = "",
+        approval_stream: Optional[Dict[str, Any]] = None,
     ) -> "web.StreamResponse":
         """Write real streaming SSE from agent's stream_delta_callback queue.
 
@@ -6545,6 +6687,13 @@ class APIServerAdapter(BasePlatformAdapter):
                     await response.write(
                         f"event: nyriel.activity\ndata: {event_data}\n\n".encode()
                     )
+                elif isinstance(item, tuple) and len(item) == 2 and item[0] == "__approval__":
+                    if approval_stream is not None and item[1].get("request_id"):
+                        approval_stream["pending"].add(item[1]["request_id"])
+                    event_data = json.dumps(item[1], ensure_ascii=False)
+                    await response.write(
+                        f"event: nyriel.approval\ndata: {event_data}\n\n".encode("utf-8")
+                    )
 
                 else:
                     content_chunk = {
@@ -6555,11 +6704,36 @@ class APIServerAdapter(BasePlatformAdapter):
                     await response.write(_sse_frame(content_chunk))
                 return time.monotonic()
 
+            async def _settle_approvals():
+                """Emit ``nyriel.approval.responded`` for every card whose
+                entry left the approval queue — answered via
+                POST /v1/sessions/{id}/approval (choice recorded in
+                ``answered``) or lapsed/interrupted (``timeout``)."""
+                if not approval_stream or not approval_stream["pending"]:
+                    return
+                from tools.approval import list_gateway_approvals
+
+                live = {d.get("request_id") for d in list_gateway_approvals(session_id)}
+                for rid in list(approval_stream["pending"]):
+                    if rid in live:
+                        continue
+                    approval_stream["pending"].discard(rid)
+                    choice = approval_stream["answered"].pop(rid, "timeout")
+                    event_data = json.dumps({
+                        "request_id": rid,
+                        "choice": choice,
+                        "resolved": choice != "timeout",
+                    })
+                    await response.write(
+                        f"event: nyriel.approval.responded\ndata: {event_data}\n\n".encode()
+                    )
+
             # Stream content chunks as they arrive from the agent. Woken
             # directly by put_threadsafe's call_soon_threadsafe — no
             # executor hop, no poll-interval latency (see
             # ThreadSafeAsyncQueue's docstring).
             while True:
+                await _settle_approvals()
                 try:
                     delta = await asyncio.wait_for(stream_q.get(), timeout=0.5)
                 except asyncio.TimeoutError:
@@ -6593,6 +6767,8 @@ class APIServerAdapter(BasePlatformAdapter):
                     break
 
                 last_activity = await _emit(delta)
+
+            await _settle_approvals()
 
             # Get usage from completed agent. The agent can fail two ways
             # after the content queue terminates cleanly: (1) ``agent_task``
@@ -8382,9 +8558,14 @@ class APIServerAdapter(BasePlatformAdapter):
         route_source: str = "global",
         confirmed_runtime_lock: bool = False,
         turn_kind: str = "operator",
+        approval_notify=None,
     ) -> tuple:
         """
         Create an agent and run a conversation in a thread executor.
+
+        *approval_notify* (WO-FACE/APPROVAL-1) is a notify callback for
+        flagged commands; when given, the turn binds *session_id* as its
+        approval key and registers the callback for the run's lifetime.
 
         *turn_kind* (WO-SESSION/YIELD-1) classifies the turn for the durable
         session-turn lease: "wake"/"background" turns yield the session when
@@ -8441,6 +8622,12 @@ class APIServerAdapter(BasePlatformAdapter):
                         request_browser_control_transport_family
                     ),
                 )
+                approval_token = None
+                if approval_notify is not None and session_id:
+                    from tools.approval import register_gateway_notify, set_current_session_key
+
+                    approval_token = set_current_session_key(session_id)
+                    register_gateway_notify(session_id, approval_notify)
                 agent = None
                 try:
                     agent = self._create_agent(
@@ -8621,6 +8808,15 @@ class APIServerAdapter(BasePlatformAdapter):
                         # shutdown.  pop() is a no-op when _create_agent
                         # succeeded but the turn never reached registration.
                         self._shutdown_interruptible_agents.pop(id(agent), None)
+                    if approval_token is not None:
+                        from tools.approval import (
+                            reset_current_session_key,
+                            unregister_gateway_notify,
+                        )
+
+                        # Releases any wait still blocked on this session.
+                        unregister_gateway_notify(session_id)
+                        reset_current_session_key(approval_token)
                     clear_session_vars(tokens)
 
         self._activate_admitted_request()

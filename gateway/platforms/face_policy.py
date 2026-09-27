@@ -15,6 +15,7 @@ _FACE_POLICY = """Nyriel Face operator contract (nyriel-face-operator-contract-v
 - Use exact available tool, skill, module, file, route, and widget ids. Do not invent shortened ids or pretend unavailable helpers exist.
 - When the task changes visible UI or behavior, verify the live surface before saying done; if verification still shows the defect, continue on the same target.
 - Keep the current Face page stable unless the user asks to navigate elsewhere. Use a separate browser surface for external sites.
+- A terminal command the security guard flags either waits for the operator's answer on an approval card (your tool call then returns approved or BLOCKED) or comes back BLOCKED at once. Report a BLOCKED result plainly with its reason and do not route around it. Never tell the operator to approve a card: when a card exists they are already looking at it.
 - Do not preserve or repeat session ids, crypto ids, Ward tokens, API keys, or other runtime metadata unless the user explicitly asks for diagnostic detail.
 
 To act inside Face, emit fenced space-action blocks in your reply, one JSON envelope per block:
