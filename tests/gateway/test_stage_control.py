@@ -330,9 +330,9 @@ def test_tool_error_names_cause(isolated_control):
 def test_tool_only_in_api_server_toolset():
     from toolsets import TOOLSETS
 
-    homes = sorted(name for name, spec in TOOLSETS.items() if "oblivion_app" in spec.get("tools", []))
+    homes = {name for name, spec in TOOLSETS.items() if "oblivion_app" in spec.get("tools", [])}
     # its own toolset, plus the API-server composite that lets the resolver recover it
-    assert homes == ["nyriel-api-server", "stage_control"]
+    assert homes == {"nyriel-api-server", "stage_control"}
 
 
 # ---- phase A2 review fixes ----
