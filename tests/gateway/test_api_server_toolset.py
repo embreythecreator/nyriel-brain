@@ -112,4 +112,7 @@ class TestApiServerAdapterToolset:
             # force-injected by _get_platform_tools, so an explicit override
             # cannot strand a /plan session without save_plan. The tool itself
             # is runtime-gated in execution_policy.py, so nothing runs early.
-            assert sorted(toolsets) == ["plan", "terminal", "web"]
+            # `stage_control` (WO-STAGE/HANDS-1) is likewise non-configurable and
+            # recovered from the api-server composite; oblivion_app is gated on an
+            # attached Oblivion app, so it is invisible until one connects.
+            assert sorted(toolsets) == ["plan", "stage_control", "terminal", "web"]

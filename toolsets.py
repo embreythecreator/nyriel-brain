@@ -167,6 +167,14 @@ TOOLSETS = {
         "includes": []
     },
 
+    "stage_control": {
+        # WO-STAGE/HANDS-1. Non-configurable: recovered only on platforms whose default
+        # composite lists oblivion_app (nyriel-api-server); gated on an attached app.
+        "description": "Drive the user's Oblivion app on their Mac over the stage-control channel",
+        "tools": ["oblivion_app"],
+        "includes": []
+    },
+
     "terminal": {
         "description": "Terminal/command execution and process management tools",
         "tools": ["terminal", "process"],
@@ -478,7 +486,8 @@ TOOLSETS = {
             "cronjob",
             # Home Assistant smart home control (gated on HASS_TOKEN via check_fn)
             "ha_list_entities", "ha_get_state", "ha_list_services", "ha_call_service",
-
+            # Oblivion app on the user's Mac (WO-STAGE/HANDS-1; gated on an attached app via check_fn)
+            "oblivion_app",
         ],
         "includes": []
     },

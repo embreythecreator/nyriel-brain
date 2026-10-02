@@ -326,6 +326,13 @@ def check_fn_cache_scope() -> Optional[str]:
         )
         if all(str(value or "").strip() for value in browser_identity):
             return CHECK_FN_CACHE_BYPASS
+        # WO-STAGE/HANDS-1: `oblivion_app` availability depends on which principal's
+        # app is attached right now, so a turn bound to a stage principal never
+        # reads or writes either cache layer. Unbound turns can only compute False.
+        from gateway.stage_control import turn_principal
+
+        if turn_principal():
+            return CHECK_FN_CACHE_BYPASS
     except Exception:
         pass
 

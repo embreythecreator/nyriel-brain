@@ -10,6 +10,8 @@ import uuid
 from contextlib import suppress
 from typing import Any, Dict, List, Optional
 
+from gateway import stage_control as _stage_control
+
 try:
     from aiohttp import web
     from aiohttp.web_request import RequestKey
@@ -700,8 +702,11 @@ async def _handle_runs(
     request_browser_control_transport_family = (
         _api_request_browser_control_transport_family.get()
     )
+    request_stage_principal = _stage_control.turn_principal()
 
     async def _run_and_close():
+        # WO-STAGE/HANDS-1: the turn's stage principal, for _create_agent's tool list.
+        _stage_control.bind_turn_principal(request_stage_principal)
         try:
             self._set_run_status(run_id, "running")
             if run_id in self._stopping_run_ids:
@@ -858,7 +863,15 @@ async def _handle_runs(
                     }
                     return r, u
 
-            result, usage = await asyncio.get_running_loop().run_in_executor(None, _run_sync)
+            def _run_sync_with_stage():
+                # Executor threads keep their context between runs: bind, then reset.
+                stage_token = _stage_control.bind_turn_principal(request_stage_principal)
+                try:
+                    return _run_sync()
+                finally:
+                    _stage_control.reset_turn_principal(stage_token)
+
+            result, usage = await asyncio.get_running_loop().run_in_executor(None, _run_sync_with_stage)
             if (
                 run_id in self._stopping_run_ids
                 and isinstance(result, dict)

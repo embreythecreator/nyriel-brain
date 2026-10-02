@@ -141,6 +141,7 @@ except ImportError:
 
 from gateway.config import Platform, PlatformConfig
 from gateway.oblivion_identity import principal_for, verify_access_token
+from gateway import stage_control as _stage_control
 from gateway.platforms import api_server_room_dispatch as _room_dispatch
 from gateway.platforms import api_server_room_grants as _room_grants
 from gateway.platforms import api_server_runs as _api_runs
@@ -2272,7 +2273,10 @@ class APIServerAdapter(BasePlatformAdapter):
         # client-supplied header. Encoding both sides keeps the timing-safe
         # comparison and matches web_server.py's dashboard-token check.
         if token and hmac.compare_digest(token.encode(), expected_key.encode()):
-            return None  # Ward key: the Face and other first-party organs.
+            # Ward key: the Face and other first-party organs. Treated as the owner
+            # (WO-STAGE/HANDS-1): its turns reach stage_control.owner_principal's app.
+            _stage_control.bind_turn_principal(_stage_control.owner_principal())
+            return None
 
         # WO-BRAIN/IDENTITY-1: a 0blivion.io access token (HS256, shared OBLIVION_JWT_SECRET).
         # Unset secret = branch disabled, behaviour identical to before.
@@ -2292,6 +2296,7 @@ class APIServerAdapter(BasePlatformAdapter):
                 )
             request["oblivion_principal"] = principal
             request["oblivion_claims"] = claims
+            _stage_control.bind_turn_principal(principal)
             return None
 
         logger.warning(
@@ -2542,6 +2547,9 @@ class APIServerAdapter(BasePlatformAdapter):
                     status=404,
                 )
             token = _api_request_profile.set(profile)
+            # _check_auth binds the turn's stage-control principal; this keeps it
+            # request-scoped on keep-alive connections that reuse one task.
+            stage_token = _stage_control.bind_turn_principal("")
             try:
                 with self._profile_scope(profile):
                     resolved_profile = profile or "default"
@@ -2557,6 +2565,7 @@ class APIServerAdapter(BasePlatformAdapter):
                         _api_request_browser_control_transport_family.reset(family_token)
                         _api_request_browser_control_principal.reset(principal_token)
             finally:
+                _stage_control.reset_turn_principal(stage_token)
                 _api_request_profile.reset(token)
 
         return profile_prefix_middleware
@@ -2580,6 +2589,8 @@ class APIServerAdapter(BasePlatformAdapter):
             # and API-key auth (see the handlers for the exact status ladder).
             ("POST", "/v1/browser-control/register", self._handle_browser_control_register),
             ("GET", "/v1/browser-control/ws", self._handle_browser_control_ws),
+            # WO-STAGE/HANDS-1: the Oblivion app dials out here so a cloud angel can drive it.
+            ("GET", "/v1/stage-control/ws", self._handle_stage_control_ws),
             # One-shot artifact transport (Phase 8 Task 29): bounded, SHA-256
             # validated HTTPS upload/download bound to a browser-control
             # scope. Gated identically to registration (feature flag + API
@@ -4055,6 +4066,55 @@ class APIServerAdapter(BasePlatformAdapter):
                 scope,
                 owner=ws,
             )
+        return ws
+
+    async def _handle_stage_control_ws(self, request: "web.Request") -> "web.StreamResponse":
+        """GET /v1/stage-control/ws — the Oblivion app's outbound socket (WO-STAGE/HANDS-1).
+
+        0blivion.io access tokens only: the shared Face key is refused, and the
+        principal is the verified token's, never anything the app sends. One app
+        per principal; a newer socket replaces the older. Frames: app→Brain
+        ``hello`` / ``result``; Brain→app ``command`` (sent by stage_control.dispatch).
+        """
+        auth_err = self._check_auth(request)
+        if auth_err is not None:
+            return auth_err
+        principal = request.get("oblivion_principal")
+        if not principal:
+            return web.json_response(
+                {"error": {"message": "stage-control needs a 0blivion.io sign-in token", "type": "gateway_auth_error", "code": "stage_control_token_required"}},
+                status=403,
+            )
+
+        control = _stage_control.get_stage_control()
+        ws = web.WebSocketResponse(heartbeat=30.0)
+        await ws.prepare(request)
+        send = _browser_controller_ws_sender(ws, asyncio.get_running_loop())
+        replaced = control.attach(principal, send, owner=ws)
+        logger.info("stage-control: Oblivion app attached for %s", principal)
+        if isinstance(replaced, web.WebSocketResponse) and not replaced.closed:
+            # Tell the older app it was superseded so it stops waiting on a dead lane.
+            await replaced.close(code=4000, message=b"replaced by a newer connection")
+        try:
+            async for msg in ws:
+                if msg.type == web.WSMsgType.TEXT:
+                    try:
+                        frame = msg.json()
+                    except Exception:
+                        continue
+                    if not isinstance(frame, dict):
+                        continue
+                    if frame.get("type") == "hello":
+                        hello = {k: frame.get(k) for k in ("protocol", "app_version", "tier")}
+                        control.set_hello(principal, hello, owner=ws)
+                        logger.info("stage-control: hello from %s %s", principal, hello)
+                    elif frame.get("type") == "result":
+                        control.complete(principal, frame, owner=ws)
+                elif msg.type in (web.WSMsgType.CLOSE, web.WSMsgType.ERROR):
+                    break
+        finally:
+            if control.detach(principal, owner=ws):
+                logger.info("stage-control: Oblivion app detached for %s", principal)
         return ws
 
     def _handle_browser_control_frame(
@@ -8608,8 +8668,17 @@ class APIServerAdapter(BasePlatformAdapter):
         request_browser_control_transport_family = (
             _api_request_browser_control_transport_family.get()
         )
+        request_stage_principal = _stage_control.turn_principal()
 
         def _run():
+            # Executor threads keep their context between runs: bind, then reset below.
+            stage_token = _stage_control.bind_turn_principal(request_stage_principal)
+            try:
+                return _run_scoped()
+            finally:
+                _stage_control.reset_turn_principal(stage_token)
+
+        def _run_scoped():
             from gateway.session_context import clear_session_vars
 
             with self._profile_scope(request_profile):
