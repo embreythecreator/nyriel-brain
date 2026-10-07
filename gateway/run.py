@@ -1198,7 +1198,7 @@ def _resolve_progress_thread_id(
         return str(source_thread_id) if source_thread_id else None
     if source_thread_id:
         return str(source_thread_id)
-    if platform_key in {"slack", "mattermost", "buzz"} and event_message_id:
+    if platform_key in {"slack", "mattermost", "plane"} and event_message_id:
         return str(event_message_id)
     return None
 
@@ -30644,15 +30644,15 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                         )
                 except Exception:
                     _progress_reply_in_thread = True
-        elif str(getattr(source.platform, "value", source.platform) or "").lower() == "buzz":
-            # Buzz honours the same opt-out (reply_to_mode: off /
+        elif str(getattr(source.platform, "value", source.platform) or "").lower() == "plane":
+            # Plane honours the same opt-out (reply_to_mode: off /
             # extra.reply_in_thread: false). When the user asked for flat
             # channel replies, progress must not synthesise a thread either.
-            _buzz_adapter_for_progress = self._adapter_for_source(source)
-            if _buzz_adapter_for_progress is not None:
+            _plane_adapter_for_progress = self._adapter_for_source(source)
+            if _plane_adapter_for_progress is not None:
                 try:
                     _progress_reply_in_thread = (
-                        getattr(_buzz_adapter_for_progress, "_reply_to_mode", "first")
+                        getattr(_plane_adapter_for_progress, "_reply_to_mode", "first")
                         != "off"
                     )
                 except Exception:
@@ -30711,10 +30711,10 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 and event_message_id
             )
             or (
-                # Buzz has no native thread_id; threading is always via reply-to
+                # Plane has no native thread_id; threading is always via reply-to
                 # the triggering event id (channel clutter otherwise). Skipped
                 # when the user opted out of threaded replies.
-                str(getattr(source.platform, "value", source.platform) or "").lower() == "buzz"
+                str(getattr(source.platform, "value", source.platform) or "").lower() == "plane"
                 and event_message_id
                 and _progress_reply_in_thread
             )

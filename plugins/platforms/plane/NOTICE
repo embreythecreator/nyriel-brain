@@ -1,0 +1,7 @@
+Plane platform adapter.
+
+Plane is the Oblivion whitefork of Block's Buzz (https://github.com/block/buzz,
+Apache-2.0). This adapter is upstream Hermes Agent's Buzz integration, renamed
+to Plane by WO-BRAIN/PLANE-RENAME-1 (rule table: *_cli/absorb/plane_rules.py).
+Links to https://github.com/block/buzz in the docs point at the upstream project
+on purpose and are kept as-is.

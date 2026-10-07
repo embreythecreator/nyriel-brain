@@ -1,4 +1,4 @@
-"""Tests for the Buzz adapter's @mention resolution (PR #83414).
+"""Tests for the Plane adapter's @mention resolution (PR #83414).
 
 Covers ``_mention_pubkeys_for`` / ``_channel_member_pubkeys`` and the
 ``send()`` recovery paths: membership-accurate candidate sourcing, token
@@ -12,26 +12,26 @@ import pytest
 
 from tests.gateway._plugin_adapter_loader import load_plugin_adapter
 
-_buzz_mod = load_plugin_adapter("buzz")
+_plane_mod = load_plugin_adapter("plane")
 
-BuzzAdapter = _buzz_mod.BuzzAdapter
+PlaneAdapter = _plane_mod.PlaneAdapter
 
 SELF_PUBKEY = "9fd5c7ba6d3ef224da78f541e0fcb9c50f72cc63edb19aae76ac6a0474dfa860"
 FIZZ_PUBKEY = "b" * 64
-BUZZ_PUBKEY = "c" * 64
+PLANE_PUBKEY = "c" * 64
 DUPE_PUBKEY = "d" * 64
 CHANNEL = "ccc2bc1a-7a82-5a8f-8c4e-57a070cbe7cd"
 
 _ENV_VARS = (
-    "BUZZ_RELAY_URL",
-    "BUZZ_PRIVATE_KEY",
-    "BUZZ_CHANNELS",
-    "BUZZ_HOME_CHANNEL",
-    "BUZZ_ALLOWED_USERS",
-    "BUZZ_ALLOW_ALL_USERS",
-    "BUZZ_POLL_INTERVAL",
-    "BUZZ_CLI_PATH",
-    "BUZZ_CREDENTIALS_FILE",
+    "PLANE_RELAY_URL",
+    "PLANE_PRIVATE_KEY",
+    "PLANE_CHANNELS",
+    "PLANE_HOME_CHANNEL",
+    "PLANE_ALLOWED_USERS",
+    "PLANE_ALLOW_ALL_USERS",
+    "PLANE_POLL_INTERVAL",
+    "PLANE_CLI_PATH",
+    "PLANE_CREDENTIALS_FILE",
 )
 
 
@@ -39,7 +39,7 @@ _ENV_VARS = (
 def _clean_env(monkeypatch, tmp_path):
     for var in _ENV_VARS:
         monkeypatch.delenv(var, raising=False)
-    monkeypatch.setattr(_buzz_mod, "_DEFAULT_CREDENTIALS_DIR", tmp_path / "no-creds")
+    monkeypatch.setattr(_plane_mod, "_DEFAULT_CREDENTIALS_DIR", tmp_path / "no-creds")
     yield
 
 
@@ -47,14 +47,14 @@ def _make_adapter(extra=None):
     from gateway.config import PlatformConfig
 
     cfg = PlatformConfig(enabled=True, extra={"relay_url": "https://test.relay", **(extra or {})})
-    adapter = BuzzAdapter(cfg)
+    adapter = PlaneAdapter(cfg)
     adapter._self_pubkey = SELF_PUBKEY
     adapter._private_key = "nsec1test"
     return adapter
 
 
 class _ScriptedCli:
-    """Fake ``_run_cli`` that routes on the buzz subcommand and records calls."""
+    """Fake ``_run_cli`` that routes on the plane subcommand and records calls."""
 
     def __init__(self):
         self.responses = {}
@@ -96,11 +96,11 @@ class TestChannelMemberPubkeys:
     async def test_members_subcommand_is_primary_source(self):
         adapter = _make_adapter()
         cli = _wire(adapter, _ScriptedCli())
-        cli.script("channels", "members", _members(FIZZ_PUBKEY, BUZZ_PUBKEY))
+        cli.script("channels", "members", _members(FIZZ_PUBKEY, PLANE_PUBKEY))
 
         pks = await adapter._channel_member_pubkeys(CHANNEL)
 
-        assert pks == [FIZZ_PUBKEY, BUZZ_PUBKEY]
+        assert pks == [FIZZ_PUBKEY, PLANE_PUBKEY]
         assert ("messages", "get") not in {(c[0][0], c[0][1]) for c in cli.calls}
 
     @pytest.mark.asyncio
@@ -112,13 +112,13 @@ class TestChannelMemberPubkeys:
             "messages",
             "get",
             [
-                {"pubkey": FIZZ_PUBKEY, "tags": [["p", BUZZ_PUBKEY]]},
+                {"pubkey": FIZZ_PUBKEY, "tags": [["p", PLANE_PUBKEY]]},
             ],
         )
 
         pks = await adapter._channel_member_pubkeys(CHANNEL)
 
-        assert FIZZ_PUBKEY in pks and BUZZ_PUBKEY in pks
+        assert FIZZ_PUBKEY in pks and PLANE_PUBKEY in pks
 
 
 # ── token matching ────────────────────────────────────────────────────────
@@ -175,8 +175,8 @@ class TestMentionTokenMatching:
     async def test_longest_name_wins_and_consumes_span(self):
         result = await self._resolve(
             "@Nyriel Matt please review",
-            members=[FIZZ_PUBKEY, BUZZ_PUBKEY],
-            profiles={FIZZ_PUBKEY: "Nyriel Matt", BUZZ_PUBKEY: "Nyriel"},
+            members=[FIZZ_PUBKEY, PLANE_PUBKEY],
+            profiles={FIZZ_PUBKEY: "Nyriel Matt", PLANE_PUBKEY: "Nyriel"},
         )
         assert result == [FIZZ_PUBKEY]
 
@@ -226,13 +226,13 @@ class TestResolutionCaching:
         cli.script("users", "get", _profile(FIZZ_PUBKEY, "FizzRenamed"))
 
         clock = [1000.0]
-        monkeypatch.setattr(_buzz_mod.time, "monotonic", lambda: clock[0])
+        monkeypatch.setattr(_plane_mod.time, "monotonic", lambda: clock[0])
 
         assert await adapter._mention_pubkeys_for(CHANNEL, "@Fizz hi") == [FIZZ_PUBKEY]
         # Inside both TTLs: rename not visible yet, no new lookups needed.
         assert await adapter._mention_pubkeys_for(CHANNEL, "@FizzRenamed hi") == []
         # Past the name TTL (and member TTL): the rename resolves.
-        clock[0] += _buzz_mod._PROFILE_NAME_TTL + 1
+        clock[0] += _plane_mod._PROFILE_NAME_TTL + 1
         assert await adapter._mention_pubkeys_for(CHANNEL, "@FizzRenamed hi") == [FIZZ_PUBKEY]
 
 

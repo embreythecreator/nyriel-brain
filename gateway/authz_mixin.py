@@ -72,7 +72,7 @@ def _auth_env(name: str, default: str = "") -> str:
 def _platform_declares_allowed_users_env(platform) -> bool:
     """Whether a plugin platform's registry entry declares ``allowed_users_env``.
 
-    Such platforms (Buzz, DingTalk, …) document ``PlatformConfig.extra
+    Such platforms (Plane, DingTalk, …) document ``PlatformConfig.extra
     .allowed_users`` as the config-file spelling of that env allowlist, so
     the live adapter's extra is a valid authorization source when the env
     var is absent (#98738 / #82871). Built-in platforms and unknown entries
@@ -105,14 +105,14 @@ def _coerce_allow_set(raw) -> set[str]:
 
 
 # ---------------------------------------------------------------------------
-# Nostr npub → hex normalization (Buzz and future Nostr-based platforms).
+# Nostr npub → hex normalization (Plane and future Nostr-based platforms).
 #
-# ``BUZZ_ALLOWED_USERS`` accepts either a 64-char hex pubkey or an ``npub1…``
+# ``PLANE_ALLOWED_USERS`` accepts either a 64-char hex pubkey or an ``npub1…``
 # bech32 string, but inbound event pubkeys are always hex.  Without decoding,
 # the central allowlist comparison string-matches the raw npub against the
 # hex pubkey and an operator who listed only their npub sees every message
 # rejected ("Unauthorized user: <hex pubkey>", #78428).  Pure stdlib; mirrors
-# the decoder in plugins/platforms/buzz/adapter.py.
+# the decoder in plugins/platforms/plane/adapter.py.
 # ---------------------------------------------------------------------------
 
 _BECH32_CHARSET = "qpzry9x8gf2tvdw0s3jn54khce6mua7l"
@@ -799,7 +799,7 @@ class GatewayAuthorizationMixin:
                     adapter_allow = extra.get("allow_from")
                 if not adapter_allow and _platform_declares_allowed_users_env(source.platform):
                     # Plugin platforms whose registry entry declares
-                    # ``allowed_users_env`` (e.g. Buzz) carry the same
+                    # ``allowed_users_env`` (e.g. Plane) carry the same
                     # operator-configured allowlist in
                     # ``PlatformConfig.extra.allowed_users``. Under multiplex
                     # the YAML→env bridge is first-writer-wins, so only the
@@ -814,7 +814,7 @@ class GatewayAuthorizationMixin:
                     normalize = getattr(adapter, "normalize_user_id", None)
                     if callable(normalize):
                         # Ids and allowlist entries may use different
-                        # spellings of the same principal (e.g. Buzz hex
+                        # spellings of the same principal (e.g. Plane hex
                         # pubkeys vs npubs) — normalize the entries.
                         allowed = {normalize(entry) or entry for entry in allowed}
                     if user_id in allowed or "*" in allowed:
@@ -949,12 +949,12 @@ class GatewayAuthorizationMixin:
         ):
             check_ids.add(source.user_name)
 
-        # Buzz (Nostr-based): BUZZ_ALLOWED_USERS accepts npub or hex, but
+        # Plane (Nostr-based): PLANE_ALLOWED_USERS accepts npub or hex, but
         # inbound event pubkeys are always 64-char hex. Decode npub entries
         # to hex so an operator who listed only their npub authorizes the
         # same identity as the hex form (#78428). Hex entries pass through
         # unchanged, so existing hex-only allowlists keep working.
-        if source.platform is not None and source.platform.value == "buzz":
+        if source.platform is not None and source.platform.value == "plane":
             allowed_ids = _normalize_nostr_allow_entries(allowed_ids)
             if user_id.startswith("npub"):
                 hex_user = _npub_to_hex(user_id)

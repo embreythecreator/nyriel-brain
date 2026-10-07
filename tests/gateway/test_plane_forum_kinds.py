@@ -1,4 +1,4 @@
-"""Regression tests for Buzz forum-kind dispatch (#90309).
+"""Regression tests for Plane forum-kind dispatch (#90309).
 
 The inbound path hardcoded Nostr kind 9 (chat) at both the WebSocket
 subscription filter and the dispatch gate, so forum channels (kind 45001
@@ -14,10 +14,10 @@ from unittest.mock import AsyncMock
 import pytest
 
 from gateway.config import PlatformConfig
-from plugins.platforms.buzz.adapter import (
+from plugins.platforms.plane.adapter import (
     _CHAT_KIND,
     _DISPATCH_KINDS,
-    BuzzAdapter,
+    PlaneAdapter,
 )
 
 CHANNEL = "7c83e8f7bb1d4db2bb4074d5c14f2a7f6a9e1c21d3b5a90f8e7d6c5b4a392801"
@@ -45,7 +45,7 @@ def _event(event_id, content="hey @Chip", kind=9, p_tag_self=False):
 
 
 def _make_group_adapter():
-    adapter = BuzzAdapter(
+    adapter = PlaneAdapter(
         PlatformConfig(enabled=True, extra={"relay_url": "https://test.relay"})
     )
     adapter._self_pubkey = SELF_PUBKEY

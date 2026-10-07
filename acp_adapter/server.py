@@ -234,7 +234,7 @@ _executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="acp-agent")
 # does not expose a client-side limit, so this is a fixed cap that clients
 # paginate against using `cursor` / `next_cursor`.
 _LIST_SESSIONS_PAGE_SIZE = 50
-# Per-provider cap for the ACP model selector. ACP clients (Zed, Buzz) render
+# Per-provider cap for the ACP model selector. ACP clients (Zed, Plane) render
 # the whole `availableModels` array in one dropdown, so an unbounded
 # cross-provider catalog degrades the picker. Mirrors the cap the MoA picker
 # already uses (`nyriel_cli/moa_cmd.py`). This bounds each provider's row, not

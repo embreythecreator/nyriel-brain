@@ -4501,7 +4501,7 @@ def _ensure_acp_launcher() -> None:
 
     Mirrors the launcher block in ``scripts/install.sh`` so existing installs
     gain the ACP command on ``nyriel update`` without a reinstall.  ACP hosts
-    (Zed, JetBrains, Buzz Desktop) spawn the agent by resolving the
+    (Zed, JetBrains, Plane Desktop) spawn the agent by resolving the
     ``nyriel-acp`` command name against the login-shell PATH; the console
     script of that name lives inside the install's venv, which is not on that
     PATH, so those hosts report Nyriel as not installed even when it is.
@@ -4540,7 +4540,7 @@ def _ensure_acp_launcher() -> None:
             shim = (
                 "#!/usr/bin/env bash\n"
                 "# Nyriel Brain — ACP launcher (written by `nyriel update`).\n"
-                "# ACP hosts (Zed, JetBrains, Buzz) resolve the agent by this\n"
+                "# ACP hosts (Zed, JetBrains, Plane) resolve the agent by this\n"
                 "# command name on the login-shell PATH.\n"
                 f'exec "{nyriel_cmd}" acp "$@"\n'
             )
@@ -9365,7 +9365,7 @@ def _cmd_update_impl(args, gateway_mode: bool):
             logger.debug("FHS PATH guard check failed: %s", e)
 
         # Self-heal the nyriel-acp launcher for installs that predate it, so
-        # ACP hosts (Zed, JetBrains, Buzz) can resolve Nyriel on PATH without
+        # ACP hosts (Zed, JetBrains, Plane) can resolve Nyriel on PATH without
         # a reinstall.  No-op on Windows (the launcher migration below owns
         # that) and when already present.
         try:

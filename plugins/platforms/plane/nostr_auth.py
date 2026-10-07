@@ -1,4 +1,4 @@
-"""Dependency-free Nostr signing for Buzz WebSocket authentication."""
+"""Dependency-free Nostr signing for Plane WebSocket authentication."""
 
 from __future__ import annotations
 
@@ -197,14 +197,14 @@ def build_auth_event(
         try:
             auth_tag = json.loads(auth_tag_json)
         except json.JSONDecodeError as exc:
-            raise ValueError("BUZZ_AUTH_TAG is not valid JSON") from exc
+            raise ValueError("PLANE_AUTH_TAG is not valid JSON") from exc
         if (
             not isinstance(auth_tag, list)
             or len(auth_tag) != 4
             or auth_tag[0] != "auth"
             or not all(isinstance(part, str) for part in auth_tag)
         ):
-            raise ValueError("BUZZ_AUTH_TAG must be a four-string auth tag")
+            raise ValueError("PLANE_AUTH_TAG must be a four-string auth tag")
         tags.append(auth_tag)
 
     pubkey = public_key_hex(private_key)

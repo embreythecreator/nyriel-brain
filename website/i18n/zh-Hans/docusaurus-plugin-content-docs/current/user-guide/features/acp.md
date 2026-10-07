@@ -91,67 +91,67 @@ nyriel acp --setup-browser --yes     # 非交互式接受下载
 
 ## 宿主设置
 
-### Buzz 频道（中继桥接）
+### Plane 频道（中继桥接）
 
-[Buzz](https://github.com/block/buzz) 是一个基于 Nostr 的人机协作平台。
-其 `buzz-acp` harness 通过 stdio 将 Buzz 频道连接到任意 ACP agent：
+[Plane](https://github.com/block/buzz) 是一个基于 Nostr 的人机协作平台。
+其 `plane-acp` harness 通过 stdio 将 Plane 频道连接到任意 ACP agent：
 
 ```text
-Buzz relay <-- WebSocket --> buzz-acp <-- ACP over stdio --> Nyriel Brain
+Plane relay <-- WebSocket --> plane-acp <-- ACP over stdio --> Nyriel Brain
 ```
 
-这是一种传输层集成，不是第二个 Nyriel 安装。由 `buzz-acp` 启动的子进程使用该主机上
+这是一种传输层集成，不是第二个 Nyriel 安装。由 `plane-acp` 启动的子进程使用该主机上
 与 `nyriel` 相同的配置、凭据、记忆、技能和状态。
 
-（这与 [Buzz Desktop 的托管运行时](#buzz-desktop)不同——后者在本地将 Nyriel 作为
-预设 harness 启动。中继桥接用于以 agent 身份加入 Buzz *频道*，通常部署在服务器上。）
+（这与 [Plane Desktop 的托管运行时](#plane-desktop)不同——后者在本地将 Nyriel 作为
+预设 harness 启动。中继桥接用于以 agent 身份加入 Plane *频道*，通常部署在服务器上。）
 
 前置条件：
 
 - 完成上文的 ACP 安装并通过 `nyriel acp --check`。
-- 从 [Buzz 仓库](https://github.com/block/buzz)构建 `buzz-acp` 和 `buzz` CLI
-  （`cargo build --release -p buzz-acp`）。
-- 为 Nyriel 铸造专用的 Nostr 密钥对（`buzz-admin generate-key`）并将其注册为
-  中继成员（`buzz-admin add-member`）。每个 agent 都需要自己的身份——不要复用
+- 从 [Plane 仓库](https://github.com/block/buzz)构建 `plane-acp` 和 `plane` CLI
+  （`cargo build --release -p plane-acp`）。
+- 为 Nyriel 铸造专用的 Nostr 密钥对（`plane-admin generate-key`）并将其注册为
+  中继成员（`plane-admin add-member`）。每个 agent 都需要自己的身份——不要复用
   人类的密钥对。
-- 将该身份加入目标 Buzz 频道。
+- 将该身份加入目标 Plane 频道。
 
 启动桥接：
 
 ```bash
-export BUZZ_RELAY_URL="wss://community.example.com"
-export BUZZ_PRIVATE_KEY="..."
-export BUZZ_API_TOKEN="..."
-export BUZZ_ACP_AGENT_COMMAND="nyriel"
-export BUZZ_ACP_AGENT_ARGS="acp"
+export PLANE_RELAY_URL="wss://community.example.com"
+export PLANE_PRIVATE_KEY="..."
+export PLANE_API_TOKEN="..."
+export PLANE_ACP_AGENT_COMMAND="nyriel"
+export PLANE_ACP_AGENT_ARGS="acp"
 
-buzz-acp
+plane-acp
 ```
 
-仅当中继强制 token 认证时才需要 `BUZZ_API_TOKEN`。切勿提交或粘贴私钥和 API token。
+仅当中继强制 token 认证时才需要 `PLANE_API_TOKEN`。切勿提交或粘贴私钥和 API token。
 
 若要持久化部署到服务器，请以拥有目标 Nyriel home 的同一操作系统用户身份，
-在服务管理器下运行 `buzz-acp`。安装、密钥生成、频道发现和各项 agent 选项见
-[buzz-acp README](https://github.com/block/buzz/tree/main/crates/buzz-acp)。
+在服务管理器下运行 `plane-acp`。安装、密钥生成、频道发现和各项 agent 选项见
+[plane-acp README](https://github.com/block/buzz/tree/main/crates/buzz-acp)。
 
-桥接会发现 Nyriel 身份所属的每个 Buzz 频道，并在其被加入新频道时自动订阅。
-因此 Buzz 频道成员资格就是访问边界；Nyriel 自身配置中无需单独的频道列表。
+桥接会发现 Nyriel 身份所属的每个 Plane 频道，并在其被加入新频道时自动订阅。
+因此 Plane 频道成员资格就是访问边界；Nyriel 自身配置中无需单独的频道列表。
 
-若要在所有者的 Buzz Desktop 中展示 Nyriel 的 ACP 活动，添加：
+若要在所有者的 Plane Desktop 中展示 Nyriel 的 ACP 活动，添加：
 
 ```bash
-export BUZZ_ACP_RELAY_OBSERVER="true"
+export PLANE_ACP_RELAY_OBSERVER="true"
 ```
 
-这会发布加密的 kind `24200` 观察者帧（Buzz 的 NIP-AO），仅所有者可解密。
+这会发布加密的 kind `24200` 观察者帧（Plane 的 NIP-AO），仅所有者可解密。
 Desktop 会在该 agent 的 **Activity log** 中实时渲染生命周期、工具、响应和用量流。
 中继将这些帧视为临时数据，因此 Desktop 必须在回合开始前在线；其本地观察者归档
 才是所有者侧的持久历史。
 
 无头桥接会自行回应 ACP 权限请求，因为没有编辑器来展示审批对话框——参见
-[将 Buzz agent 保持为 owner-only](#将-buzz-agent-保持为-owner-only)。请将桥接视为
-特权自动化：使用专用操作系统账户，限制哪些 Buzz 用户可以触发 agent
-（`buzz-acp` 通过 `BUZZ_ACP_AGENT_OWNER` 支持仅所有者响应门控），
+[将 Plane agent 保持为 owner-only](#将-plane-agent-保持为-owner-only)。请将桥接视为
+特权自动化：使用专用操作系统账户，限制哪些 Plane 用户可以触发 agent
+（`plane-acp` 通过 `PLANE_ACP_AGENT_OWNER` 支持仅所有者响应门控），
 并仅在预期 Nyriel 工作的频道中授予成员资格。
 
 ## 编辑器设置
@@ -208,10 +208,10 @@ Desktop 会在该 agent 的 **Activity log** 中实时渲染生命周期、工�
 
 使用兼容 ACP 的插件并将其指向 `nyriel acp` 或 `nyriel-acp`。
 
-### Buzz Desktop
+### Plane Desktop
 
-[Buzz](https://github.com/block/buzz) 将 Nyriel Brain 作为预设运行时提供。
-按常规方式安装 Nyriel 后，Buzz 会自动发现它 —— 打开 **Settings → Runtimes**，
+[Plane](https://github.com/block/buzz) 将 Nyriel Brain 作为预设运行时提供。
+按常规方式安装 Nyriel 后，Plane 会自动发现它 —— 打开 **Settings → Runtimes**，
 Nyriel 就会出现在你的运行时列表中。
 
 如果发现失败（较旧的安装），请确认 ACP 启动器可以在登录 shell 的 PATH 上解析：
@@ -222,28 +222,28 @@ command -v nyriel-acp || command -v nyriel
 
 较新的安装会将 `nyriel` 和 `nyriel-acp` 两个启动器写入 `~/.local/bin`；
 运行 `nyriel update` 会为较旧的安装补上 `nyriel-acp` 启动器。作为手动兜底方案，
-可以将 Buzz 的 agent 命令配置为 `nyriel`，参数为 `["acp"]`。
+可以将 Plane 的 agent 命令配置为 `nyriel`，参数为 `["acp"]`。
 
-#### 将 Buzz agent 保持为 owner-only
+#### 将 Plane agent 保持为 owner-only
 
-Buzz 创建的每个 agent 默认都将 **Who can talk to this agent** 设为 `Owner only`。
+Plane 创建的每个 agent 默认都将 **Who can talk to this agent** 设为 `Owner only`。
 当运行时为 Nyriel 时，请保持该设置。
 
 这条路径上有两种行为叠加。`nyriel-acp` 工具集包含 `terminal` 和 `execute_code`，
-而 Buzz 的 ACP 桥接层会自行以 `allow_once` 回应 Nyriel 的权限请求，不会转交给你确认。
-因此 Buzz 中的 Nyriel agent 会在不提示的情况下在宿主机上执行 shell 命令。
+而 Plane 的 ACP 桥接层会自行以 `allow_once` 回应 Nyriel 的权限请求，不会转交给你确认。
+因此 Plane 中的 Nyriel agent 会在不提示的情况下在宿主机上执行 shell 命令。
 让它对一个临时目录执行 `rm -rf`，该目录会被直接删除，全程没有任何提示。
 
 将该设置改为 `Anyone`，等于把同样的 shell 访问权限交给频道中的每一位发言者。
-Buzz 在你选择该选项时不会给出任何警告。
+Plane 在你选择该选项时不会给出任何警告。
 
 目前两种看起来可行的缓解手段都无效：
 
-- `approvals.mode: manual` 确实会让 Nyriel 发出权限请求，但 Buzz 仍会自动批准，
+- `approvals.mode: manual` 确实会让 Nyriel 发出权限请求，但 Plane 仍会自动批准，
   命令照样执行。
 - `platform_toolsets.acp` 不会收窄 ACP 工具集，因此无法用它去掉 `terminal`。
 
-来自 owner 的 `!shutdown` 在任何模式下都能停止 agent，而 Buzz 会忽略其他人发出的同一命令。
+来自 owner 的 `!shutdown` 在任何模式下都能停止 agent，而 Plane 会忽略其他人发出的同一命令。
 
 ## 配置与凭据
 
@@ -283,7 +283,7 @@ ACP 会话将编辑器的 cwd 绑定到 Nyriel 任务 ID，使文件和终端工
 - 拒绝
 
 你是否真的会看到提示取决于宿主端。宿主可以用程序方式直接回应该请求而不展示给你，
-此时这些选项只存在于协议层面，永远不会到达人类手中。Buzz Desktop 就是这样做的，
+此时这些选项只存在于协议层面，永远不会到达人类手中。Plane Desktop 就是这样做的，
 因此无论你的 `approvals` 如何设置，都应把该路径视为无人值守执行。
 
 超时或出错时，审批桥接会拒绝请求。

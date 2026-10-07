@@ -432,12 +432,12 @@ def _build_provider_env_blocklist() -> frozenset:
     # It arrives via the registry loop above (anthropic api_key_env_vars),
     # so remove it explicitly.
     blocked.discard("CLAUDE_CODE_OAUTH_TOKEN")
-    # BUZZ_* is deliberately NOT discarded here, even for Buzz-managed agents
-    # (BUZZ_MANAGED_AGENT set by the buzz-acp harness).  This blocklist is
+    # PLANE_* is deliberately NOT discarded here, even for Plane-managed agents
+    # (PLANE_MANAGED_AGENT set by the plane-acp harness).  This blocklist is
     # shared by every scrub surface — the terminal paths, execute_code, and
     # the :func:`nyriel_subprocess_env` Tier-2 strip (browser / TUI host /
     # copilot-executor spawns) — so an import-time discard would leak
-    # BUZZ_PRIVATE_KEY into non-terminal children too.  The Buzz carve-out is
+    # PLANE_PRIVATE_KEY into non-terminal children too.  The Plane carve-out is
     # instead a TERMINAL-ONLY, context-gated scrub-path exemption: see
     # ``_TERMINAL_FIRST_PARTY_ENV_PREFIXES`` / ``_is_terminal_first_party_env``
     # below (issue #78026 / #76243, PRs #78065 + #78511).
@@ -447,19 +447,19 @@ def _build_provider_env_blocklist() -> frozenset:
 _NYRIEL_PROVIDER_ENV_BLOCKLIST = _build_provider_env_blocklist()
 
 # First-party platform credentials the agent's own platform adapters need in
-# terminal children (e.g. the ``BUZZ_*`` vars for the Buzz messaging
-# platform, which drive the platform-mandated ``buzz`` CLI: BUZZ_PRIVATE_KEY,
-# BUZZ_AUTH_TAG, BUZZ_RELAY_URL, and the other BUZZ_* names). These are the
-# agent's OWN credentials — a Buzz community agent is expected to operate the
-# ``buzz`` CLI — so they are carved out of the terminal scrub.
+# terminal children (e.g. the ``PLANE_*`` vars for the Plane messaging
+# platform, which drive the platform-mandated ``plane`` CLI: PLANE_PRIVATE_KEY,
+# PLANE_AUTH_TAG, PLANE_RELAY_URL, and the other PLANE_* names). These are the
+# agent's OWN credentials — a Plane community agent is expected to operate the
+# ``plane`` CLI — so they are carved out of the terminal scrub.
 #
 # CONTEXT-GATED: the carve-out applies ONLY when this process/session is
-# actually operating as a Buzz agent — either the process is a Buzz-ACP
-# managed agent (``BUZZ_MANAGED_AGENT`` is set, only by Buzz Desktop's
-# buzz-acp harness; see #76243 / #78511) or the current session's platform is
-# ``buzz`` (the gateway's ``NYRIEL_SESSION_PLATFORM`` ContextVar; concurrency
+# actually operating as a Plane agent — either the process is a Plane-ACP
+# managed agent (``PLANE_MANAGED_AGENT`` is set, only by Plane Desktop's
+# plane-acp harness; see #76243 / #78511) or the current session's platform is
+# ``plane`` (the gateway's ``NYRIEL_SESSION_PLATFORM`` ContextVar; concurrency
 # safe under a multi-session host). A Telegram/CLI/cron session on a host
-# that also runs a Buzz gateway does NOT get BUZZ_PRIVATE_KEY in its terminal
+# that also runs a Plane gateway does NOT get PLANE_PRIVATE_KEY in its terminal
 # children — blanket passthrough of a signing key to every terminal child on
 # the host would be wrong (maintainer triage note on #76243: don't expose the
 # key to unrelated shell commands).
@@ -486,59 +486,59 @@ _NYRIEL_PROVIDER_ENV_BLOCKLIST = _build_provider_env_blocklist()
 # ``LocalEnvironment._additional_profile_scoped_passthrough_names``) so they
 # never persist in the shared terminal snapshot across profiles.
 #
-# Prefix-based on purpose: future ``BUZZ_*`` names added by the platform's
+# Prefix-based on purpose: future ``PLANE_*`` names added by the platform's
 # plugin.yaml (or a user's own credentials file) are covered without another
 # code change. Contrast with CLAUDE_CODE_OAUTH_TOKEN above, which is discarded
 # from the blocklist entirely because it is NOT a Nyriel credential; these ARE
 # Nyriel-managed first-party platform credentials, so they stay IN the
 # blocklist for every non-terminal surface.
 #
-# See issue #78026 (Buzz agents could not use ``buzz`` from the terminal tool)
-# and #76243 (Buzz Desktop managed agent wakes but cannot reply).
-_TERMINAL_FIRST_PARTY_ENV_PREFIXES = ("BUZZ_",)
+# See issue #78026 (Plane agents could not use ``plane`` from the terminal tool)
+# and #76243 (Plane Desktop managed agent wakes but cannot reply).
+_TERMINAL_FIRST_PARTY_ENV_PREFIXES = ("PLANE_",)
 
 
 def _matches_terminal_first_party_prefix(name: str) -> bool:
     """Pure name check: ``name`` is one of the first-party platform
-    credential names (``BUZZ_*``), regardless of session context.  Used for
+    credential names (``PLANE_*``), regardless of session context.  Used for
     the snapshot exclusion, which must stay conservative even when the
     carve-out itself is inactive."""
     return name.startswith(_TERMINAL_FIRST_PARTY_ENV_PREFIXES)
 
 
-def _buzz_terminal_context_active() -> bool:
-    """True when this process/session is operating as a Buzz agent.
+def _plane_terminal_context_active() -> bool:
+    """True when this process/session is operating as a Plane agent.
 
     Two independent signals, either suffices:
 
-    * ``BUZZ_MANAGED_AGENT`` in the process env — set exclusively by Buzz
-      Desktop's buzz-acp harness when it spawns ``nyriel acp`` (#76243).
+    * ``PLANE_MANAGED_AGENT`` in the process env — set exclusively by Plane
+      Desktop's plane-acp harness when it spawns ``nyriel acp`` (#76243).
       Gateway / CLI / cron / kanban processes never carry it.
-    * The live session's platform is ``buzz`` — the gateway's
+    * The live session's platform is ``plane`` — the gateway's
       ``NYRIEL_SESSION_PLATFORM`` ContextVar via
       :func:`gateway.session_context.get_session_env`, which is
       ContextVar-authoritative under a concurrent multi-session host, so a
       sibling Telegram/Discord session on the same gateway process resolves
-      its OWN platform, not buzz.
+      its OWN platform, not plane.
     """
-    if os.environ.get("BUZZ_MANAGED_AGENT"):
+    if os.environ.get("PLANE_MANAGED_AGENT"):
         return True
     try:
         from gateway.session_context import get_session_env
 
-        return get_session_env("NYRIEL_SESSION_PLATFORM", "").strip().lower() == "buzz"
+        return get_session_env("NYRIEL_SESSION_PLATFORM", "").strip().lower() == "plane"
     except Exception:
         return False
 
 
 def _is_terminal_first_party_env(name: str) -> bool:
     """Return True if ``name`` is a first-party platform credential that must
-    reach terminal children (the ``BUZZ_*`` set) AND the current
-    process/session context entitles it (Buzz-managed agent or a buzz-platform
-    session — see :func:`_buzz_terminal_context_active`)."""
+    reach terminal children (the ``PLANE_*`` set) AND the current
+    process/session context entitles it (Plane-managed agent or a plane-platform
+    session — see :func:`_plane_terminal_context_active`)."""
     if not _matches_terminal_first_party_prefix(name):
         return False
-    return _buzz_terminal_context_active()
+    return _plane_terminal_context_active()
 
 
 # Active-virtualenv markers that must NOT leak into terminal subprocesses.
@@ -1970,16 +1970,16 @@ class LocalEnvironment(BaseEnvironment):
     is_local = True
 
     def _additional_profile_scoped_passthrough_names(self) -> tuple[str, ...]:
-        """Return first-party terminal env names (``BUZZ_*``) present in the
+        """Return first-party terminal env names (``PLANE_*``) present in the
         current env, so they are excluded from the shared session snapshot.
 
         The login-shell snapshot (``init_session`` ``export -p`` dump and the
         per-command re-dump) captures the child env, which now includes the
-        ``BUZZ_*`` vars the terminal carve-out passes through. The exclusion
+        ``PLANE_*`` vars the terminal carve-out passes through. The exclusion
         set is derived from ``get_all_passthrough()`` plus backend-specific
-        additions — and ``BUZZ_*`` can NEVER be in it, because env_passthrough
+        additions — and ``PLANE_*`` can NEVER be in it, because env_passthrough
         refuses blocklisted names (GHSA-rhgp-j443-p4rf). Under a multiplexed
-        gateway, profile A's BUZZ_PRIVATE_KEY would land in
+        gateway, profile A's PLANE_PRIVATE_KEY would land in
         ``nyriel-snap-<id>.sh`` and a later command from profile B sharing
         this collapsed LocalEnvironment would ``source`` it: a cross-profile
         nsec leak that defeats profile isolation.

@@ -62,17 +62,17 @@ class TestStripByDefault:
         for var in _TIER1_SAMPLE:
             assert var not in result, f"{var} leaked (Tier-1) with inherit_credentials=False"
 
-    def test_buzz_platform_vars_stripped_by_default(self):
-        """BUZZ_* first-party platform credentials must NOT reach the
+    def test_plane_platform_vars_stripped_by_default(self):
+        """PLANE_* first-party platform credentials must NOT reach the
         non-terminal spawn surface (browser / TUI host / copilot-executor),
         even though they pass through to terminal children (issue #78026)."""
-        buzz_sample = {
-            "BUZZ_PRIVATE_KEY": "nsec1fake",
-            "BUZZ_AUTH_TAG": '["tag","data","kind","sig"]',
-            "BUZZ_RELAY_URL": "https://mycommunity.communities.buzz.xyz",
+        plane_sample = {
+            "PLANE_PRIVATE_KEY": "nsec1fake",
+            "PLANE_AUTH_TAG": '["tag","data","kind","sig"]',
+            "PLANE_RELAY_URL": "https://plane.0blivion.io",
         }
-        result = _build(buzz_sample)
-        for var in buzz_sample:
+        result = _build(plane_sample)
+        for var in plane_sample:
             assert var not in result, f"{var} leaked via nyriel_subprocess_env"
 
 

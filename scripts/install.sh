@@ -2084,7 +2084,7 @@ EOF
     chmod +x "$command_link_dir/nyriel-brain"
     log_success "Installed nyriel-brain launcher → $command_link_display_dir/nyriel-brain"
 
-    # Also expose `nyriel-acp`. ACP hosts (Zed, JetBrains, Buzz) resolve the
+    # Also expose `nyriel-acp`. ACP hosts (Zed, JetBrains, Plane) resolve the
     # agent by command name on the login-shell PATH, and the `nyriel-acp`
     # console script lives inside the venv, which is not on that PATH. Without
     # this launcher those hosts report Nyriel as not installed. (#21454 applies

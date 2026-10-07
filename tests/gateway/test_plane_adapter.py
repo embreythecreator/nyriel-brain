@@ -1,4 +1,4 @@
-"""Tests for the Buzz platform adapter plugin."""
+"""Tests for the Plane platform adapter plugin."""
 
 import asyncio
 import base64
@@ -14,24 +14,24 @@ from gateway.platforms.base import CachedMedia, MessageType
 from tests.gateway._plugin_adapter_loader import load_plugin_adapter
 from gateway.platforms.base import MessageType
 
-# Load plugins/platforms/buzz/adapter.py under a unique module name
-# (plugin_adapter_buzz) so it cannot collide with other plugin adapters
+# Load plugins/platforms/plane/adapter.py under a unique module name
+# (plugin_adapter_plane) so it cannot collide with other plugin adapters
 # loaded by sibling tests in the same xdist worker.
-_buzz_mod = load_plugin_adapter("buzz")
+_plane_mod = load_plugin_adapter("plane")
 
-BuzzAdapter = _buzz_mod.BuzzAdapter
-hex_to_npub = _buzz_mod.hex_to_npub
-npub_to_hex = _buzz_mod.npub_to_hex
-_normalize_user_ref = _buzz_mod._normalize_user_ref
-_cli_error_message = _buzz_mod._cli_error_message
-_resolve_private_key = _buzz_mod._resolve_private_key
-_resolve_auth_tag = _buzz_mod._resolve_auth_tag
-_event_reply_parent_id = _buzz_mod._event_reply_parent_id
-check_requirements = _buzz_mod.check_requirements
-validate_config = _buzz_mod.validate_config
-register = _buzz_mod.register
-_env_enablement = _buzz_mod._env_enablement
-_standalone_send = _buzz_mod._standalone_send
+PlaneAdapter = _plane_mod.PlaneAdapter
+hex_to_npub = _plane_mod.hex_to_npub
+npub_to_hex = _plane_mod.npub_to_hex
+_normalize_user_ref = _plane_mod._normalize_user_ref
+_cli_error_message = _plane_mod._cli_error_message
+_resolve_private_key = _plane_mod._resolve_private_key
+_resolve_auth_tag = _plane_mod._resolve_auth_tag
+_event_reply_parent_id = _plane_mod._event_reply_parent_id
+check_requirements = _plane_mod.check_requirements
+validate_config = _plane_mod.validate_config
+register = _plane_mod.register
+_env_enablement = _plane_mod._env_enablement
+_standalone_send = _plane_mod._standalone_send
 
 # Real key pair (Chip's public identity — public information, not a secret)
 SELF_PUBKEY = "9fd5c7ba6d3ef224da78f541e0fcb9c50f72cc63edb19aae76ac6a0474dfa860"
@@ -45,27 +45,27 @@ CHANNEL = "ccc2bc1a-7a82-5a8f-8c4e-57a070cbe7cd"
 DM_CHANNEL = "6468cc16-a114-4f23-8b8c-02c1655cbf6b"
 
 _ENV_VARS = (
-    "BUZZ_RELAY_URL",
-    "BUZZ_PRIVATE_KEY",
-    "BUZZ_CHANNELS",
-    "BUZZ_HOME_CHANNEL",
-    "BUZZ_ALLOWED_USERS",
-    "BUZZ_REACTION_ONLY_USERS",
-    "BUZZ_ALLOW_ALL_USERS",
-    "BUZZ_POLL_INTERVAL",
-    "BUZZ_AUTH_TAG",
-    "BUZZ_CLI_PATH",
-    "BUZZ_CREDENTIALS_FILE",
-    "BUZZ_AUTH_TAG",
+    "PLANE_RELAY_URL",
+    "PLANE_PRIVATE_KEY",
+    "PLANE_CHANNELS",
+    "PLANE_HOME_CHANNEL",
+    "PLANE_ALLOWED_USERS",
+    "PLANE_REACTION_ONLY_USERS",
+    "PLANE_ALLOW_ALL_USERS",
+    "PLANE_POLL_INTERVAL",
+    "PLANE_AUTH_TAG",
+    "PLANE_CLI_PATH",
+    "PLANE_CREDENTIALS_FILE",
+    "PLANE_AUTH_TAG",
 )
 
 
 @pytest.fixture(autouse=True)
 def _clean_env(monkeypatch, tmp_path):
-    """Keep tests hermetic: no ambient Buzz env vars or real credentials."""
+    """Keep tests hermetic: no ambient Plane env vars or real credentials."""
     for var in _ENV_VARS:
         monkeypatch.delenv(var, raising=False)
-    monkeypatch.setattr(_buzz_mod, "_DEFAULT_CREDENTIALS_DIR", tmp_path / "no-creds")
+    monkeypatch.setattr(_plane_mod, "_DEFAULT_CREDENTIALS_DIR", tmp_path / "no-creds")
     yield
 
 
@@ -84,7 +84,7 @@ def _make_adapter(extra=None):
     from gateway.config import PlatformConfig
 
     cfg = PlatformConfig(enabled=True, extra={"relay_url": "https://test.relay", **(extra or {})})
-    adapter = BuzzAdapter(cfg)
+    adapter = PlaneAdapter(cfg)
     adapter._self_pubkey = SELF_PUBKEY
     adapter._self_npub = SELF_NPUB
     adapter._display_name = "Chip"
@@ -96,7 +96,7 @@ def _make_adapter(extra=None):
 
 
 class _ScriptedCli:
-    """Fake ``_run_cli`` that routes on the buzz subcommand and records calls."""
+    """Fake ``_run_cli`` that routes on the plane subcommand and records calls."""
 
     def __init__(self):
         self.responses = {}  # (group, cmd) -> list of (code, stdout, stderr)
@@ -131,7 +131,7 @@ class TestBech32Helpers:
 # ── Adapter init / config precedence ──────────────────────────────────────
 
 
-class TestBuzzAdapterInit:
+class TestPlaneAdapterInit:
 
 
     def test_init_from_config_extra(self):
@@ -145,16 +145,16 @@ class TestBuzzAdapterInit:
                 "home_channel": "ccc",
             },
         )
-        adapter = BuzzAdapter(cfg)
+        adapter = PlaneAdapter(cfg)
         assert adapter.relay_url == "https://cfg.relay"
         assert adapter.channels == ["ccc"]
         assert adapter.poll_interval == 2.0
         assert adapter.home_channel == "ccc"
 
     def test_env_overrides_config(self, monkeypatch):
-        monkeypatch.setenv("BUZZ_RELAY_URL", "https://env.relay")
+        monkeypatch.setenv("PLANE_RELAY_URL", "https://env.relay")
         from gateway.config import PlatformConfig
-        adapter = BuzzAdapter(PlatformConfig(enabled=True, extra={"relay_url": "https://cfg.relay"}))
+        adapter = PlaneAdapter(PlatformConfig(enabled=True, extra={"relay_url": "https://cfg.relay"}))
         assert adapter.relay_url == "https://env.relay"
 
 
@@ -186,16 +186,16 @@ def multiplex_scope():
 @pytest.fixture
 def default_profile_env(monkeypatch):
     """The default profile's YAML-to-env bridge output in os.environ."""
-    monkeypatch.setenv("BUZZ_RELAY_URL", "https://default.relay")
-    monkeypatch.setenv("BUZZ_CHANNELS", "chan-a,chan-b,chan-c")
-    monkeypatch.setenv("BUZZ_HOME_CHANNEL", "chan-a")
-    monkeypatch.setenv("BUZZ_POLL_INTERVAL", "9")
-    monkeypatch.setenv("BUZZ_CLI_PATH", "/default/bin/buzz")
-    monkeypatch.setenv("BUZZ_TRANSPORT", "poll")
-    monkeypatch.setenv("BUZZ_ALLOWED_USERS", "default-user-npub")
-    monkeypatch.setenv("BUZZ_CREDENTIALS_FILE", "/default/creds.json")
-    monkeypatch.setenv("BUZZ_PRIVATE_KEY", "nsec1default")
-    monkeypatch.setenv("BUZZ_AUTH_TAG", '["auth","default-profile-tag","","x"]')
+    monkeypatch.setenv("PLANE_RELAY_URL", "https://default.relay")
+    monkeypatch.setenv("PLANE_CHANNELS", "chan-a,chan-b,chan-c")
+    monkeypatch.setenv("PLANE_HOME_CHANNEL", "chan-a")
+    monkeypatch.setenv("PLANE_POLL_INTERVAL", "9")
+    monkeypatch.setenv("PLANE_CLI_PATH", "/default/bin/plane")
+    monkeypatch.setenv("PLANE_TRANSPORT", "poll")
+    monkeypatch.setenv("PLANE_ALLOWED_USERS", "default-user-npub")
+    monkeypatch.setenv("PLANE_CREDENTIALS_FILE", "/default/creds.json")
+    monkeypatch.setenv("PLANE_PRIVATE_KEY", "nsec1default")
+    monkeypatch.setenv("PLANE_AUTH_TAG", '["auth","default-profile-tag","","x"]')
 
 
 class TestMultiplexProfileScope:
@@ -206,7 +206,7 @@ class TestMultiplexProfileScope:
         """The secondary profile's PlatformConfig is authoritative (#98738)."""
         from gateway.config import PlatformConfig
 
-        cli = tmp_path / "buzz"
+        cli = tmp_path / "plane"
         cli.write_text("#!/bin/sh\n", encoding="utf-8")
         multiplex_scope()
         cfg = PlatformConfig(
@@ -221,7 +221,7 @@ class TestMultiplexProfileScope:
                 "allowed_users": [SELF_NPUB],
             },
         )
-        adapter = BuzzAdapter(cfg)
+        adapter = PlaneAdapter(cfg)
         assert adapter.relay_url == "https://profile.relay"
         assert adapter.channels == ["pchan"]
         assert adapter.home_channel == "pchan"
@@ -239,28 +239,28 @@ class TestMultiplexProfileScope:
         from gateway.config import PlatformConfig
 
         multiplex_scope()
-        adapter = BuzzAdapter(PlatformConfig(enabled=True, extra={}))
+        adapter = PlaneAdapter(PlatformConfig(enabled=True, extra={}))
         assert adapter.relay_url == ""
         assert adapter.channels == []
         assert adapter.home_channel == ""
-        assert adapter.poll_interval == _buzz_mod._DEFAULT_POLL_INTERVAL
+        assert adapter.poll_interval == _plane_mod._DEFAULT_POLL_INTERVAL
         assert adapter.transport == "auto"
         assert adapter._allowed_pubkeys == set()
 
     def test_secondary_credentials_file_not_borrowed(
         self, multiplex_scope, default_profile_env, tmp_path, monkeypatch
     ):
-        """BUZZ_CREDENTIALS_FILE in env points at the DEFAULT profile's key
+        """PLANE_CREDENTIALS_FILE in env points at the DEFAULT profile's key
         file; the scoped adapter must not read the default identity's key."""
         default_creds = tmp_path / "default-creds.json"
         default_creds.write_text(
             json.dumps({"nsec": "nsec1default-identity"}), encoding="utf-8"
         )
-        monkeypatch.setenv("BUZZ_CREDENTIALS_FILE", str(default_creds))
+        monkeypatch.setenv("PLANE_CREDENTIALS_FILE", str(default_creds))
         multiplex_scope()
         # Scope has no key: the profile is unconfigured and must fail closed
         # to "" rather than resolving the default profile's credentials.
-        assert _buzz_mod._resolve_private_key({}) == ""
+        assert _plane_mod._resolve_private_key({}) == ""
 
     def test_default_profile_unscoped_keeps_env_precedence(
         self, monkeypatch, default_profile_env
@@ -272,7 +272,7 @@ class TestMultiplexProfileScope:
 
         set_multiplex_active(True)
         try:
-            adapter = BuzzAdapter(
+            adapter = PlaneAdapter(
                 PlatformConfig(enabled=True, extra={"relay_url": "https://cfg.relay"})
             )
         finally:
@@ -297,7 +297,7 @@ class TestMultiplexProfileScope:
                 {
                     "gateway": {
                         "platforms": {
-                            "buzz": {
+                            "plane": {
                                 "enabled": True,
                                 "extra": {
                                     "relay_url": "https://profile.relay",
@@ -315,12 +315,12 @@ class TestMultiplexProfileScope:
         token = set_nyriel_home_override(str(tmp_path))
         try:
             # The default profile's env relay+key must NOT pass the gate on
-            # their own for a profile without a buzz config...
+            # their own for a profile without a plane config...
             assert check_requirements() is True  # profile config passes
         finally:
             reset_nyriel_home_override(token)
 
-        # A profile whose config.yaml has no buzz entry fails closed even
+        # A profile whose config.yaml has no plane entry fails closed even
         # though the default profile's env values are present.
         empty_home = tmp_path / "empty-profile"
         empty_home.mkdir()
@@ -332,7 +332,7 @@ class TestMultiplexProfileScope:
             reset_nyriel_home_override(token)
 
     def test_env_enablement_scoped_returns_none(self, multiplex_scope, default_profile_env):
-        """Scoped env enablement must not fabricate Buzz for a profile from
+        """Scoped env enablement must not fabricate Plane for a profile from
         the default profile's env values."""
         multiplex_scope()
         assert _env_enablement() is None
@@ -342,18 +342,18 @@ class TestMultiplexProfileScope:
     ):
         """A secondary profile's YAML values must not be pinned into the
         process env for every other profile (first-writer-wins)."""
-        for var in ("BUZZ_RELAY_URL", "BUZZ_HOME_CHANNEL", "BUZZ_CHANNELS"):
+        for var in ("PLANE_RELAY_URL", "PLANE_HOME_CHANNEL", "PLANE_CHANNELS"):
             monkeypatch.delenv(var, raising=False)
         multiplex_scope()
-        _buzz_mod._apply_yaml_config(
+        _plane_mod._apply_yaml_config(
             {},
             {"extra": {"relay_url": "https://profile.relay", "home_channel": "pchan"}},
         )
         import os as _os
 
-        assert "BUZZ_RELAY_URL" not in _os.environ
-        assert "BUZZ_HOME_CHANNEL" not in _os.environ
-        assert "BUZZ_CHANNELS" not in _os.environ
+        assert "PLANE_RELAY_URL" not in _os.environ
+        assert "PLANE_HOME_CHANNEL" not in _os.environ
+        assert "PLANE_CHANNELS" not in _os.environ
 
     def test_standalone_send_scoped_uses_profile_extra(
         self, multiplex_scope, default_profile_env, monkeypatch, tmp_path
@@ -361,7 +361,7 @@ class TestMultiplexProfileScope:
         multiplex_scope()
         from gateway.config import PlatformConfig
 
-        cli = tmp_path / "buzz"
+        cli = tmp_path / "plane"
         cli.write_text("#!/bin/sh\n", encoding="utf-8")
         calls = {}
 
@@ -369,9 +369,9 @@ class TestMultiplexProfileScope:
             calls["relay"] = relay_url
             return 0, '{"accepted": true, "event_id": "e1"}', ""
 
-        monkeypatch.setattr(_buzz_mod, "_exec_buzz", fake_exec)
+        monkeypatch.setattr(_plane_mod, "_exec_plane", fake_exec)
         monkeypatch.setattr(
-            _buzz_mod, "_resolve_private_key", lambda extra=None: "nsec1profile"
+            _plane_mod, "_resolve_private_key", lambda extra=None: "nsec1profile"
         )
         result = asyncio.run(
             _standalone_send(
@@ -394,26 +394,26 @@ class TestMultiplexProfileScope:
         from gateway.config import PlatformConfig
 
         multiplex_scope()
-        adapter = BuzzAdapter(
+        adapter = PlaneAdapter(
             PlatformConfig(enabled=True, extra={"relay_url": "https://profile.relay"})
         )
         assert adapter.relay_url == "https://profile.relay"
         assert adapter.channels == []
         assert adapter.home_channel == ""
-        assert adapter.poll_interval == _buzz_mod._DEFAULT_POLL_INTERVAL
+        assert adapter.poll_interval == _plane_mod._DEFAULT_POLL_INTERVAL
         assert adapter.transport == "auto"
         assert adapter._allowed_pubkeys == set()
 
     def test_ws_auth_tag_not_borrowed_from_default_profile_env(
         self, multiplex_scope, default_profile_env
     ):
-        """BUZZ_AUTH_TAG is per-identity NIP-OA owner attestation: a scoped
+        """PLANE_AUTH_TAG is per-identity NIP-OA owner attestation: a scoped
         secondary profile without one must not sign its NIP-42 auth event
         with the default profile's tag from os.environ (#98738)."""
         import asyncio as _asyncio
 
         multiplex_scope()
-        adapter = BuzzAdapter.__new__(BuzzAdapter)
+        adapter = PlaneAdapter.__new__(PlaneAdapter)
         adapter._private_key = "00" * 31 + "03"
         adapter._websocket_url = lambda: "wss://relay.example"
 
@@ -442,8 +442,8 @@ class TestMultiplexProfileScope:
         import asyncio as _asyncio
 
         profile_tag = json.dumps(["auth", "p" * 64, "", "q" * 128])
-        multiplex_scope({"BUZZ_AUTH_TAG": profile_tag})
-        adapter = BuzzAdapter.__new__(BuzzAdapter)
+        multiplex_scope({"PLANE_AUTH_TAG": profile_tag})
+        adapter = PlaneAdapter.__new__(PlaneAdapter)
         adapter._private_key = "00" * 31 + "03"
         adapter._websocket_url = lambda: "wss://relay.example"
 
@@ -475,7 +475,7 @@ class TestMultiplexProfileScope:
 
         set_multiplex_active(True)
         try:
-            adapter = BuzzAdapter.__new__(BuzzAdapter)
+            adapter = PlaneAdapter.__new__(PlaneAdapter)
             adapter._private_key = "00" * 31 + "03"
             adapter._websocket_url = lambda: "wss://relay.example"
 
@@ -540,7 +540,7 @@ class TestMultiplexProfileScope:
         multiplex_scope()
         from gateway.config import PlatformConfig
 
-        cli = tmp_path / "buzz"
+        cli = tmp_path / "plane"
         cli.write_text("#!/bin/sh\n", encoding="utf-8")
         calls = {}
 
@@ -548,9 +548,9 @@ class TestMultiplexProfileScope:
             calls["args"] = args
             return 0, '{"accepted": true, "event_id": "e1"}', ""
 
-        monkeypatch.setattr(_buzz_mod, "_exec_buzz", fake_exec)
+        monkeypatch.setattr(_plane_mod, "_exec_plane", fake_exec)
         monkeypatch.setattr(
-            _buzz_mod, "_resolve_private_key", lambda extra=None: "nsec1profile"
+            _plane_mod, "_resolve_private_key", lambda extra=None: "nsec1profile"
         )
         result = asyncio.run(
             _standalone_send(
@@ -573,19 +573,19 @@ class TestMultiplexProfileScope:
         self, multiplex_scope, default_profile_env, monkeypatch, tmp_path
     ):
         """No chat_id and no profile home_channel: the error is returned —
-        the default profile's env BUZZ_HOME_CHANNEL must not be borrowed."""
+        the default profile's env PLANE_HOME_CHANNEL must not be borrowed."""
         multiplex_scope()
         from gateway.config import PlatformConfig
 
-        cli = tmp_path / "buzz"
+        cli = tmp_path / "plane"
         cli.write_text("#!/bin/sh\n", encoding="utf-8")
 
         async def fake_exec(cli_path, args, *, relay_url, private_key, auth_tag="", input_text=None, timeout=None):
             raise AssertionError("CLI must not run without a resolved target")
 
-        monkeypatch.setattr(_buzz_mod, "_exec_buzz", fake_exec)
+        monkeypatch.setattr(_plane_mod, "_exec_plane", fake_exec)
         monkeypatch.setattr(
-            _buzz_mod, "_resolve_private_key", lambda extra=None: "nsec1profile"
+            _plane_mod, "_resolve_private_key", lambda extra=None: "nsec1profile"
         )
         result = asyncio.run(
             _standalone_send(
@@ -598,7 +598,7 @@ class TestMultiplexProfileScope:
             )
         )
         assert result == {
-            "error": "Buzz standalone send: no target channel (set BUZZ_HOME_CHANNEL)"
+            "error": "Plane standalone send: no target channel (set PLANE_HOME_CHANNEL)"
         }
 
 
@@ -755,7 +755,7 @@ class TestInboundAttachments:
                 f"filename {index}.bin",
             ])
 
-        attachments = BuzzAdapter._imeta_attachments(event)
+        attachments = PlaneAdapter._imeta_attachments(event)
 
         assert len(attachments) == 3
         assert sum(item["size"] for item in attachments) <= 20 * 1024 * 1024
@@ -764,7 +764,7 @@ class TestInboundAttachments:
     async def test_download_caches_only_exact_size_and_sha256(self, monkeypatch):
         import httpx
 
-        payload = b"verified Buzz attachment"
+        payload = b"verified Plane attachment"
         digest = hashlib.sha256(payload).hexdigest()
         real_async_client = httpx.AsyncClient
 
@@ -984,7 +984,7 @@ class TestInboundAttachments:
             ],
         ])
 
-        attachments = BuzzAdapter._imeta_attachments(event)
+        attachments = PlaneAdapter._imeta_attachments(event)
 
         assert len(attachments) == 1
         assert attachments[0]["filename"] == "report.txt"
@@ -1053,7 +1053,7 @@ class TestInboundAttachments:
         call = adapter._dispatch_message.await_args
         assert call is not None
         dispatched = call.kwargs
-        assert "1 Buzz attachment(s) rejected" in dispatched["text"]
+        assert "1 Plane attachment(s) rejected" in dispatched["text"]
         assert len(dispatched["text"]) <= 80
         assert dispatched["media_urls"] == []
 
@@ -1092,7 +1092,7 @@ class TestInboundAttachments:
         call = adapter._dispatch_message.await_args
         assert call is not None
         dispatched = call.kwargs
-        assert "1 Buzz attachment(s) rejected" in dispatched["text"]
+        assert "1 Plane attachment(s) rejected" in dispatched["text"]
         assert len(dispatched["media_urls"]) == 4
 
     def test_imeta_bounds_filename_to_filesystem_safe_utf8_length(self):
@@ -1106,7 +1106,7 @@ class TestInboundAttachments:
             "filename " + ("é" * 180) + ".pdf",
         ])
 
-        filename = BuzzAdapter._imeta_attachments(event)[0]["filename"]
+        filename = PlaneAdapter._imeta_attachments(event)[0]["filename"]
 
         assert len(filename.encode("utf-8")) <= 120
         assert filename.endswith(".pdf")
@@ -1133,7 +1133,7 @@ class TestInboundAttachments:
             ),
         )
         monkeypatch.setattr(
-            _buzz_mod,
+            _plane_mod,
             "cache_media_bytes",
             MagicMock(side_effect=OSError(36, "File name too long")),
         )
@@ -1160,7 +1160,7 @@ class TestInboundAttachments:
             await asyncio.sleep(0.05)
             return httpx.Response(200, content=payload, headers={"content-length": "1"})
 
-        monkeypatch.setattr(_buzz_mod, "_ATTACHMENT_DOWNLOAD_TIMEOUT", 0.01)
+        monkeypatch.setattr(_plane_mod, "_ATTACHMENT_DOWNLOAD_TIMEOUT", 0.01)
         monkeypatch.setattr(
             httpx,
             "AsyncClient",
@@ -1289,7 +1289,7 @@ class TestInboundAttachments:
                 f"filename {index}.bin",
             ])
 
-        attachments = BuzzAdapter._imeta_attachments(event)
+        attachments = PlaneAdapter._imeta_attachments(event)
 
         assert len(attachments) == 4
         assert all("@" not in item["url"] and "#" not in item["url"] for item in attachments)
@@ -1358,7 +1358,7 @@ class TestInboundAttachments:
         authorization,
     ):
         adapter = _make_adapter()
-        adapter._run_cli = AsyncMock(side_effect=AssertionError("authorization test invoked Buzz CLI"))
+        adapter._run_cli = AsyncMock(side_effect=AssertionError("authorization test invoked Plane CLI"))
         adapter._resolve_user_name = AsyncMock(return_value="Other")
         adapter._allowed_pubkeys = {OTHER_PUBKEY}
         if authorization is None:
@@ -1400,7 +1400,7 @@ class TestInboundAttachments:
     @pytest.mark.asyncio
     async def test_explicit_true_gateway_authority_caches_attachment(self):
         adapter = _make_adapter()
-        adapter._run_cli = AsyncMock(side_effect=AssertionError("authorization test invoked Buzz CLI"))
+        adapter._run_cli = AsyncMock(side_effect=AssertionError("authorization test invoked Plane CLI"))
         adapter._resolve_user_name = AsyncMock(return_value="Other")
         authorization_check = MagicMock(return_value=True)
         adapter.set_authorization_check(authorization_check)
@@ -1452,7 +1452,7 @@ class TestInboundAttachments:
         runner.pairing_store.is_approved.return_value = False
 
         adapter = _make_adapter()
-        adapter._run_cli = AsyncMock(side_effect=AssertionError("authorization test invoked Buzz CLI"))
+        adapter._run_cli = AsyncMock(side_effect=AssertionError("authorization test invoked Plane CLI"))
         adapter._resolve_user_name = AsyncMock(return_value="Other")
         adapter._allowed_pubkeys = {OTHER_PUBKEY}
         adapter.set_authorization_check(runner._make_adapter_auth_check(adapter.platform))
@@ -1475,7 +1475,7 @@ class TestInboundAttachments:
 
         await adapter._handle_event(CHANNEL, adapter._channel_state[CHANNEL], event)
 
-        runner.pairing_store.is_approved.assert_called_once_with("buzz", OTHER_PUBKEY)
+        runner.pairing_store.is_approved.assert_called_once_with("plane", OTHER_PUBKEY)
         adapter._cache_inbound_attachments.assert_not_awaited()
         adapter._dispatch_message.assert_awaited_once()
 
@@ -1689,7 +1689,7 @@ class TestMentionGating:
 # ── NIP-10 thread replies as addressed (issue #75826) ────────────────────
 #
 # With require_mention (default), channel replies whose direct parent is the
-# agent's own message must dispatch even when the text has no @name — Buzz
+# agent's own message must dispatch even when the text has no @name — Plane
 # Desktop's natural reply affordance for /approve never types a mention.
 
 
@@ -1946,7 +1946,7 @@ class TestNip10ThreadReplyMentionGate:
 
 # ── DM classification via p-tags (issue #68871) ──────────────────────────
 #
-# `buzz dms list` returns [] on some hosted relays, so DM conversations leak
+# `plane dms list` returns [] on some hosted relays, so DM conversations leak
 # in via `channels list` and get seeded chat_type="group".  The adapter must
 # reclassify them from the Nostr tags of real traffic: DM messages are
 # p-tagged to our own pubkey WITHOUT the text mentioning us, while channel
@@ -2144,7 +2144,7 @@ class TestThreadRoots:
 # ── Sending ───────────────────────────────────────────────────────────────
 
 
-class TestBuzzAdapterSend:
+class TestPlaneAdapterSend:
 
     @pytest.mark.asyncio
     async def test_send_success_via_stdin(self):
@@ -2177,12 +2177,12 @@ class TestBuzzAdapterSend:
         result = await adapter.send(
             CHANNEL,
             "working",
-            metadata={"thread_id": "buzz-event-123"},
+            metadata={"thread_id": "plane-event-123"},
         )
 
         assert result.success is True
         args, _stdin = cli.calls[0]
-        assert args[args.index("--reply-to") + 1] == "buzz-event-123"
+        assert args[args.index("--reply-to") + 1] == "plane-event-123"
 
     @pytest.mark.asyncio
     async def test_send_uses_metadata_reply_to_message_id(self):
@@ -2424,7 +2424,7 @@ class TestBuzzAdapterSend:
         cli.script("messages", "send", {"accepted": True, "event_id": "evt126b", "message": ""})
         adapter._run_cli = cli
 
-        original_is_file = _buzz_mod.Path.is_file
+        original_is_file = _plane_mod.Path.is_file
         probe_results = iter([True, False])
 
         def sequential_is_file(path):
@@ -2432,7 +2432,7 @@ class TestBuzzAdapterSend:
                 return next(probe_results, original_is_file(path))
             return original_is_file(path)
 
-        monkeypatch.setattr(_buzz_mod.Path, "is_file", sequential_is_file)
+        monkeypatch.setattr(_plane_mod.Path, "is_file", sequential_is_file)
 
         result = await adapter.send_image_file(CHANNEL, str(img), caption="screenshot")
 
@@ -2536,7 +2536,7 @@ class TestThreadAnchoring:
     The gateway hands adapters the triggering message's own id as the reply
     anchor. For a top-level message that correctly opens a thread; for a
     message already inside a thread it used to nest a fresh sub-thread under
-    every answer (an endless ladder of one-message threads in Buzz).
+    every answer (an endless ladder of one-message threads in Plane).
     """
 
     @staticmethod
@@ -2640,7 +2640,7 @@ class TestInboundMediaLocalisation:
         adapter._message_handler = AsyncMock()
         adapter.send_reaction = AsyncMock(return_value=True)
         adapter._run_cli = cli
-        # Localisation spends the agent's Buzz credentials, so it is gated on
+        # Localisation spends the agent's Plane credentials, so it is gated on
         # an explicit gateway authorization. The gateway registers this check
         # on every adapter it constructs; tests are authorized by default and
         # override the callback where the gate itself is under test.
@@ -2903,7 +2903,7 @@ class TestInboundMediaLocalisation:
 class TestInboundMediaAuthorizationGate:
     """Authenticated retrieval must never run for an unauthorized sender.
 
-    ``buzz media get`` signs the request with this agent's own key, so a
+    ``plane media get`` signs the request with this agent's own key, so a
     relay object named by an unauthorized sender must not be fetched or
     cached. Every non-``True`` outcome — denial, no registered check, a
     raising check, or a truthy non-boolean — must fail closed and leave the
@@ -3092,7 +3092,7 @@ class TestInboundMediaAuthorizationGate:
         assert len(result.error) <= 900
 
     @pytest.mark.asyncio
-    async def test_send_to_platform_live_buzz_delivers_all_media(self, monkeypatch, tmp_path):
+    async def test_send_to_platform_live_plane_delivers_all_media(self, monkeypatch, tmp_path):
         from gateway.config import Platform
         from tools.send_message_tool import _send_to_platform
 
@@ -3106,7 +3106,7 @@ class TestInboundMediaAuthorizationGate:
         cli.script("messages", "send", {"accepted": True, "event_id": "evt-first"})
         cli.script("messages", "send", {"accepted": True, "event_id": "evt-second"})
         adapter._run_cli = cli
-        platform = Platform("buzz")
+        platform = Platform("plane")
         runner = SimpleNamespace(adapters={platform: adapter})
         monkeypatch.setattr("gateway.run._gateway_runner_ref", lambda: runner)
 
@@ -3139,7 +3139,7 @@ class TestInboundMediaAuthorizationGate:
 # ── Lifecycle ─────────────────────────────────────────────────────────────
 
 
-class TestBuzzAdapterLifecycle:
+class TestPlaneAdapterLifecycle:
 
 
     @pytest.mark.asyncio
@@ -3156,7 +3156,7 @@ class TestBuzzAdapterLifecycle:
         adapter = _make_adapter()
         adapter._lock_key = "wss://relay.example:" + SELF_PUBKEY
         await adapter.disconnect()
-        assert released == [("buzz", "wss://relay.example:" + SELF_PUBKEY)]
+        assert released == [("plane", "wss://relay.example:" + SELF_PUBKEY)]
         assert adapter._lock_key is None
 
     @pytest.mark.asyncio
@@ -3168,8 +3168,8 @@ class TestBuzzAdapterLifecycle:
             gateway_status, "acquire_scoped_lock", lambda platform, key: False
         )
         adapter = _make_adapter()
-        adapter.cli_path = "/fake/buzz"
-        monkeypatch.setattr(_buzz_mod, "_resolve_private_key", lambda extra=None: "nsec1test")
+        adapter.cli_path = "/fake/plane"
+        monkeypatch.setattr(_plane_mod, "_resolve_private_key", lambda extra=None: "nsec1test")
         cli = _ScriptedCli()
         cli.script(
             "users", "get",
@@ -3186,26 +3186,26 @@ class TestBuzzAdapterLifecycle:
 class TestCredentialResolution:
 
     def test_env_key_wins(self, monkeypatch):
-        monkeypatch.setenv("BUZZ_PRIVATE_KEY", "nsec1fromenv")
+        monkeypatch.setenv("PLANE_PRIVATE_KEY", "nsec1fromenv")
         assert _resolve_private_key() == "nsec1fromenv"
 
     def test_credentials_file_fallback(self, monkeypatch, tmp_path):
         creds = tmp_path / "agent_credentials.json"
         creds.write_text(json.dumps({"nsec": "nsec1fromfile", "npub": "npub1x"}), encoding="utf-8")
-        monkeypatch.setenv("BUZZ_CREDENTIALS_FILE", str(creds))
+        monkeypatch.setenv("PLANE_CREDENTIALS_FILE", str(creds))
         assert _resolve_private_key() == "nsec1fromfile"
 
     def test_owner_auth_tag_from_credentials_file(self, monkeypatch, tmp_path):
         tag = ["auth", "b" * 64, "", "c" * 128]
         creds = tmp_path / "agent_credentials.json"
         creds.write_text(json.dumps({"nsec": "nsec1fromfile", "auth_tag": tag}), encoding="utf-8")
-        monkeypatch.setenv("BUZZ_CREDENTIALS_FILE", str(creds))
+        monkeypatch.setenv("PLANE_CREDENTIALS_FILE", str(creds))
         assert json.loads(_resolve_auth_tag()) == tag
 
     def test_invalid_owner_auth_tag_fails_closed(self, monkeypatch, tmp_path):
         creds = tmp_path / "agent_credentials.json"
         creds.write_text(json.dumps({"nsec": "nsec1fromfile", "auth_tag": ["bad"]}), encoding="utf-8")
-        monkeypatch.setenv("BUZZ_CREDENTIALS_FILE", str(creds))
+        monkeypatch.setenv("PLANE_CREDENTIALS_FILE", str(creds))
         with pytest.raises(ValueError, match="auth tag"):
             _resolve_auth_tag()
 
@@ -3218,10 +3218,10 @@ class TestCredentialResolution:
         scoped = tmp_path / "scoped.json"
         ambient.write_text(json.dumps({"nsec": "nsec1ambient", "auth_tag": ambient_tag}))
         scoped.write_text(json.dumps({"nsec": "nsec1scoped", "auth_tag": scoped_tag}))
-        monkeypatch.setenv("BUZZ_CREDENTIALS_FILE", str(ambient))
-        monkeypatch.setenv("BUZZ_AUTH_TAG", json.dumps(ambient_tag))
+        monkeypatch.setenv("PLANE_CREDENTIALS_FILE", str(ambient))
+        monkeypatch.setenv("PLANE_AUTH_TAG", json.dumps(ambient_tag))
         ss.set_multiplex_active(True)
-        token = ss.set_secret_scope({"BUZZ_CREDENTIALS_FILE": str(scoped)})
+        token = ss.set_secret_scope({"PLANE_CREDENTIALS_FILE": str(scoped)})
         try:
             assert _resolve_private_key() == "nsec1scoped"
             assert json.loads(_resolve_auth_tag()) == scoped_tag
@@ -3233,7 +3233,7 @@ class TestCredentialResolution:
         tag = ["auth", "b" * 64, "", "c" * 128]
         creds = tmp_path / "agent_credentials.json"
         creds.write_text(json.dumps({"nsec": "nsec1fromfile", "auth_tag": tag}), encoding="utf-8")
-        monkeypatch.setattr(_buzz_mod, "_DEFAULT_CREDENTIALS_DIR", tmp_path)
+        monkeypatch.setattr(_plane_mod, "_DEFAULT_CREDENTIALS_DIR", tmp_path)
         assert _resolve_private_key() == "nsec1fromfile"
         assert json.loads(_resolve_auth_tag()) == tag
 
@@ -3244,7 +3244,7 @@ class TestCredentialResolution:
         (tmp_path / "general_credentials.json").write_text(
             json.dumps({"nsec": "nsec1ambient", "auth_tag": tag}), encoding="utf-8"
         )
-        monkeypatch.setattr(_buzz_mod, "_DEFAULT_CREDENTIALS_DIR", tmp_path)
+        monkeypatch.setattr(_plane_mod, "_DEFAULT_CREDENTIALS_DIR", tmp_path)
         ss.set_multiplex_active(True)
         token = ss.set_secret_scope({})
         try:
@@ -3264,23 +3264,23 @@ class TestEnvEnablement:
         assert _env_enablement() is None
 
 
-class TestBuzzPluginRegistration:
+class TestPlanePluginRegistration:
 
     def test_register_platform_contract(self):
         from gateway.platform_registry import platform_registry
 
-        platform_registry.unregister("buzz")
+        platform_registry.unregister("plane")
         ctx = MagicMock()
         register(ctx)
         ctx.register_platform.assert_called_once()
         kwargs = ctx.register_platform.call_args.kwargs
-        assert kwargs["name"] == "buzz"
-        assert kwargs["cron_deliver_env_var"] == "BUZZ_HOME_CHANNEL"
-        assert kwargs["allowed_users_env"] == "BUZZ_ALLOWED_USERS"
-        assert kwargs["allow_all_env"] == "BUZZ_ALLOW_ALL_USERS"
+        assert kwargs["name"] == "plane"
+        assert kwargs["cron_deliver_env_var"] == "PLANE_HOME_CHANNEL"
+        assert kwargs["allowed_users_env"] == "PLANE_ALLOWED_USERS"
+        assert kwargs["allow_all_env"] == "PLANE_ALLOW_ALL_USERS"
         assert callable(kwargs["standalone_sender_fn"])
         assert callable(kwargs["env_enablement_fn"])
-        assert set(kwargs["required_env"]) == {"BUZZ_RELAY_URL", "BUZZ_PRIVATE_KEY"}
+        assert set(kwargs["required_env"]) == {"PLANE_RELAY_URL", "PLANE_PRIVATE_KEY"}
 
 
 class TestStandaloneSend:
@@ -3289,11 +3289,11 @@ class TestStandaloneSend:
     async def test_standalone_send_success(self, monkeypatch, tmp_path):
         from gateway.config import PlatformConfig
 
-        fake_cli = tmp_path / "buzz"
+        fake_cli = tmp_path / "plane"
         fake_cli.write_text("#!/bin/sh\n", encoding="utf-8")
-        monkeypatch.setenv("BUZZ_RELAY_URL", "https://r")
-        monkeypatch.setenv("BUZZ_PRIVATE_KEY", "nsec1x")
-        monkeypatch.setenv("BUZZ_CLI_PATH", str(fake_cli))
+        monkeypatch.setenv("PLANE_RELAY_URL", "https://r")
+        monkeypatch.setenv("PLANE_PRIVATE_KEY", "nsec1x")
+        monkeypatch.setenv("PLANE_CLI_PATH", str(fake_cli))
 
         captured = {}
 
@@ -3301,7 +3301,7 @@ class TestStandaloneSend:
             captured.update(cli_path=cli_path, args=args, relay_url=relay_url, auth_tag=auth_tag, input_text=input_text)
             return 0, json.dumps({"accepted": True, "event_id": "evt-cron", "message": ""}), ""
 
-        monkeypatch.setattr(_buzz_mod, "_exec_buzz", fake_exec)
+        monkeypatch.setattr(_plane_mod, "_exec_plane", fake_exec)
 
         result = await _standalone_send(PlatformConfig(enabled=True, extra={}), CHANNEL, "cron says hi")
         assert result == {"success": True, "message_id": "evt-cron"}
@@ -3316,7 +3316,7 @@ class TestStandaloneSend:
     ):
         """Cron/standalone path must load NIP-OA auth_tag from credentials JSON.
 
-        Main-line regression: when only BUZZ_PRIVATE_KEY is ambient and the
+        Main-line regression: when only PLANE_PRIVATE_KEY is ambient and the
         credentials file holds auth_tag, omitting injection causes relay 403
         membership failures on owner-gated relays.
         """
@@ -3328,13 +3328,13 @@ class TestStandaloneSend:
             json.dumps({"nsec": "nsec1fromfile", "auth_tag": tag}),
             encoding="utf-8",
         )
-        fake_cli = tmp_path / "buzz"
+        fake_cli = tmp_path / "plane"
         fake_cli.write_text("#!/bin/sh\n", encoding="utf-8")
-        monkeypatch.setenv("BUZZ_RELAY_URL", "https://r")
-        monkeypatch.setenv("BUZZ_CLI_PATH", str(fake_cli))
-        monkeypatch.setenv("BUZZ_CREDENTIALS_FILE", str(creds))
-        monkeypatch.delenv("BUZZ_PRIVATE_KEY", raising=False)
-        monkeypatch.delenv("BUZZ_AUTH_TAG", raising=False)
+        monkeypatch.setenv("PLANE_RELAY_URL", "https://r")
+        monkeypatch.setenv("PLANE_CLI_PATH", str(fake_cli))
+        monkeypatch.setenv("PLANE_CREDENTIALS_FILE", str(creds))
+        monkeypatch.delenv("PLANE_PRIVATE_KEY", raising=False)
+        monkeypatch.delenv("PLANE_AUTH_TAG", raising=False)
 
         captured = {}
 
@@ -3349,7 +3349,7 @@ class TestStandaloneSend:
             )
             return 0, json.dumps({"accepted": True, "event_id": "evt-auth", "message": ""}), ""
 
-        monkeypatch.setattr(_buzz_mod, "_exec_buzz", fake_exec)
+        monkeypatch.setattr(_plane_mod, "_exec_plane", fake_exec)
 
         result = await _standalone_send(
             PlatformConfig(enabled=True, extra={}), CHANNEL, "cron needs owner auth"
@@ -3357,7 +3357,7 @@ class TestStandaloneSend:
         assert result == {"success": True, "message_id": "evt-auth"}
         assert captured["private_key"] == "nsec1fromfile"
         assert json.loads(captured["auth_tag"]) == tag
-        # Secrets stay out of argv (auth_tag is env-injected by _exec_buzz).
+        # Secrets stay out of argv (auth_tag is env-injected by _exec_plane).
         joined_args = " ".join(str(a) for a in captured["args"])
         assert "nsec1fromfile" not in joined_args
         assert tag[1] not in joined_args
@@ -3370,20 +3370,20 @@ class TestStandaloneSend:
         """Direct private key without credentials_file must not invent an auth tag."""
         from gateway.config import PlatformConfig
 
-        fake_cli = tmp_path / "buzz"
+        fake_cli = tmp_path / "plane"
         fake_cli.write_text("#!/bin/sh\n", encoding="utf-8")
-        monkeypatch.setenv("BUZZ_RELAY_URL", "https://r")
-        monkeypatch.setenv("BUZZ_PRIVATE_KEY", "nsec1x")
-        monkeypatch.setenv("BUZZ_CLI_PATH", str(fake_cli))
-        monkeypatch.delenv("BUZZ_AUTH_TAG", raising=False)
-        monkeypatch.delenv("BUZZ_CREDENTIALS_FILE", raising=False)
+        monkeypatch.setenv("PLANE_RELAY_URL", "https://r")
+        monkeypatch.setenv("PLANE_PRIVATE_KEY", "nsec1x")
+        monkeypatch.setenv("PLANE_CLI_PATH", str(fake_cli))
+        monkeypatch.delenv("PLANE_AUTH_TAG", raising=False)
+        monkeypatch.delenv("PLANE_CREDENTIALS_FILE", raising=False)
         # Ambient credentials dir must not be borrowed when a direct key is set.
         ambient = tmp_path / "ambient_credentials.json"
         ambient.write_text(
             json.dumps({"nsec": "nsec1ambient", "auth_tag": ["auth", "a" * 64, "", "d" * 128]}),
             encoding="utf-8",
         )
-        monkeypatch.setattr(_buzz_mod, "_DEFAULT_CREDENTIALS_DIR", tmp_path)
+        monkeypatch.setattr(_plane_mod, "_DEFAULT_CREDENTIALS_DIR", tmp_path)
 
         captured = {}
 
@@ -3393,7 +3393,7 @@ class TestStandaloneSend:
             captured.update(private_key=private_key, auth_tag=auth_tag)
             return 0, json.dumps({"accepted": True, "event_id": "evt-key", "message": ""}), ""
 
-        monkeypatch.setattr(_buzz_mod, "_exec_buzz", fake_exec)
+        monkeypatch.setattr(_plane_mod, "_exec_plane", fake_exec)
         result = await _standalone_send(
             PlatformConfig(enabled=True, extra={}), CHANNEL, "key only"
         )
@@ -3407,11 +3407,11 @@ class TestStandaloneSend:
     ):
         from gateway.config import PlatformConfig
 
-        fake_cli = tmp_path / "buzz"
+        fake_cli = tmp_path / "plane"
         fake_cli.write_text("#!/bin/sh\n", encoding="utf-8")
-        monkeypatch.setenv("BUZZ_RELAY_URL", "https://r")
-        monkeypatch.setenv("BUZZ_PRIVATE_KEY", "nsec1x")
-        monkeypatch.setenv("BUZZ_CLI_PATH", str(fake_cli))
+        monkeypatch.setenv("PLANE_RELAY_URL", "https://r")
+        monkeypatch.setenv("PLANE_PRIVATE_KEY", "nsec1x")
+        monkeypatch.setenv("PLANE_CLI_PATH", str(fake_cli))
         sent = []
 
         async def fake_exec(
@@ -3440,7 +3440,7 @@ class TestStandaloneSend:
                 "",
             )
 
-        monkeypatch.setattr(_buzz_mod, "_exec_buzz", fake_exec)
+        monkeypatch.setattr(_plane_mod, "_exec_plane", fake_exec)
 
         result = await _standalone_send(
             PlatformConfig(enabled=True, extra={}),
@@ -3458,13 +3458,13 @@ class TestStandaloneSend:
     async def test_standalone_send_extracts_path_from_media_descriptor(self, monkeypatch, tmp_path):
         from gateway.config import PlatformConfig
 
-        fake_cli = tmp_path / "buzz"
+        fake_cli = tmp_path / "plane"
         fake_cli.write_text("#!/bin/sh\n", encoding="utf-8")
         document = tmp_path / "report.txt"
         document.write_text("report", encoding="utf-8")
-        monkeypatch.setenv("BUZZ_RELAY_URL", "https://r")
-        monkeypatch.setenv("BUZZ_PRIVATE_KEY", "nsec1x")
-        monkeypatch.setenv("BUZZ_CLI_PATH", str(fake_cli))
+        monkeypatch.setenv("PLANE_RELAY_URL", "https://r")
+        monkeypatch.setenv("PLANE_PRIVATE_KEY", "nsec1x")
+        monkeypatch.setenv("PLANE_CLI_PATH", str(fake_cli))
 
         captured = {}
 
@@ -3472,7 +3472,7 @@ class TestStandaloneSend:
             captured["args"] = args
             return 0, json.dumps({"accepted": True, "event_id": "evt-media"}), ""
 
-        monkeypatch.setattr(_buzz_mod, "_exec_buzz", fake_exec)
+        monkeypatch.setattr(_plane_mod, "_exec_plane", fake_exec)
 
         result = await _standalone_send(
             PlatformConfig(enabled=True, extra={}),
@@ -3495,7 +3495,7 @@ class TestStandaloneSend:
 # ── Editing and deleting (streaming) ──────────────────────────────────
 
 
-class TestBuzzAdapterEdit:
+class TestPlaneAdapterEdit:
 
     @pytest.mark.asyncio
     async def test_edit_targets_the_original_event_and_uses_stdin(self):
@@ -3519,7 +3519,7 @@ class TestBuzzAdapterEdit:
     async def test_edit_returns_the_original_id_not_the_cli_event_id(self):
         """The stream consumer re-edits ONE message id for the whole stream.
 
-        buzz-cli reports a fresh event id for each edit; returning that would
+        plane-cli reports a fresh event id for each edit; returning that would
         make the second edit address a message that was never sent.
         """
         adapter = _make_adapter()
@@ -3636,14 +3636,14 @@ class TestBuzzAdapterEdit:
     ):
         from gateway.config import PlatformConfig
 
-        fake_cli = tmp_path / "buzz"
+        fake_cli = tmp_path / "plane"
         fake_cli.write_text("#!/bin/sh\n", encoding="utf-8")
-        monkeypatch.setenv("BUZZ_RELAY_URL", "https://r")
-        monkeypatch.setenv("BUZZ_PRIVATE_KEY", "nsec1x")
-        monkeypatch.setenv("BUZZ_CLI_PATH", str(fake_cli))
+        monkeypatch.setenv("PLANE_RELAY_URL", "https://r")
+        monkeypatch.setenv("PLANE_PRIVATE_KEY", "nsec1x")
+        monkeypatch.setenv("PLANE_CLI_PATH", str(fake_cli))
         monkeypatch.setattr(
-            _buzz_mod,
-            "_exec_buzz",
+            _plane_mod,
+            "_exec_plane",
             AsyncMock(return_value=(0, stdout, "")),
         )
 
@@ -3651,7 +3651,7 @@ class TestBuzzAdapterEdit:
             PlatformConfig(enabled=True, extra={}), CHANNEL, "hello"
         )
 
-        assert result == {"error": "Buzz standalone send failed: invalid CLI response"}
+        assert result == {"error": "Plane standalone send failed: invalid CLI response"}
 
     @pytest.mark.asyncio
     async def test_standalone_send_rejection_is_useful_bounded_and_not_delivered(
@@ -3659,14 +3659,14 @@ class TestBuzzAdapterEdit:
     ):
         from gateway.config import PlatformConfig
 
-        fake_cli = tmp_path / "buzz"
+        fake_cli = tmp_path / "plane"
         fake_cli.write_text("#!/bin/sh\n", encoding="utf-8")
-        monkeypatch.setenv("BUZZ_RELAY_URL", "https://r")
-        monkeypatch.setenv("BUZZ_PRIVATE_KEY", "nsec1x")
-        monkeypatch.setenv("BUZZ_CLI_PATH", str(fake_cli))
+        monkeypatch.setenv("PLANE_RELAY_URL", "https://r")
+        monkeypatch.setenv("PLANE_PRIVATE_KEY", "nsec1x")
+        monkeypatch.setenv("PLANE_CLI_PATH", str(fake_cli))
         monkeypatch.setattr(
-            _buzz_mod,
-            "_exec_buzz",
+            _plane_mod,
+            "_exec_plane",
             AsyncMock(
                 return_value=(
                     0,
@@ -3713,7 +3713,7 @@ class TestChannelCursorPersistence:
 
     @staticmethod
     def _cursor_file(tmp_path):
-        return tmp_path / "buzz" / "channel-cursors.json"
+        return tmp_path / "plane" / "channel-cursors.json"
 
     async def _seed(self, adapter, *events):
         cli = _ScriptedCli()
@@ -3800,7 +3800,7 @@ class TestChannelCursorPersistence:
 
     @pytest.mark.asyncio
     async def test_restored_seen_set_stays_bounded(self, adapter, tmp_path):
-        cap = _buzz_mod._SEEN_CAP
+        cap = _plane_mod._SEEN_CAP
         path = self._cursor_file(tmp_path)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(

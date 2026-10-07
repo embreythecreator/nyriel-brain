@@ -1,11 +1,11 @@
 """
-Buzz Platform Adapter for Nyriel Brain.
+Plane Platform Adapter for Nyriel Brain.
 
-A plugin-based gateway adapter that connects to a Buzz community relay
-(Block's open-source human+agent collaboration platform, built on the
+A plugin-based gateway adapter that connects to a Plane community relay
+(Oblivion's open-source human+agent collaboration platform, built on the
 Nostr protocol) and relays messages to/from the Nyriel agent.
 
-The adapter does not speak Nostr itself — it shells out to the ``buzz``
+The adapter does not speak Nostr itself — it shells out to the ``plane``
 CLI binary ("JSON in, JSON out") via ``asyncio.create_subprocess_exec``.
 Inbound delivery uses a poll loop (the CLI is request/response); see the
 "Known limitations" note in the platform docs.
@@ -14,27 +14,27 @@ Configuration in config.yaml::
 
     gateway:
       platforms:
-        buzz:
+        plane:
           enabled: true
           extra:
-            relay_url: https://mycommunity.communities.buzz.xyz
+            relay_url: https://plane.0blivion.io
             channels:                  # channel UUIDs to watch (empty = all joined)
               - ccc2bc1a-7a82-5a8f-8c4e-57a070cbe7cd
             home_channel: ccc2bc1a-7a82-5a8f-8c4e-57a070cbe7cd
             poll_interval: 4           # seconds between poll sweeps
-            cli_path: ""               # path to the buzz binary (default: PATH, then ~/bin/buzz)
-            credentials_file: ""       # JSON file holding the nsec (fallback for BUZZ_PRIVATE_KEY)
+            cli_path: ""               # path to the plane binary (default: PATH, then ~/bin/plane)
+            credentials_file: ""       # JSON file holding the nsec (fallback for PLANE_PRIVATE_KEY)
             allowed_users: []          # empty = allow all; entries are hex pubkeys or npubs
             reply_in_thread: true      # false = post replies flat to the channel timeline
             reaction_only_users: []    # acknowledge explicit tags without dispatching; allowed_users wins on overlap
 
 Or via environment variables (overrides config.yaml):
-    BUZZ_RELAY_URL, BUZZ_CHANNELS, BUZZ_HOME_CHANNEL, BUZZ_POLL_INTERVAL,
-    BUZZ_CLI_PATH, BUZZ_CREDENTIALS_FILE, BUZZ_ALLOWED_USERS,
-    BUZZ_REACTION_ONLY_USERS, BUZZ_ALLOW_ALL_USERS, BUZZ_REPLY_IN_THREAD,
-    BUZZ_REPLY_TO_MODE
+    PLANE_RELAY_URL, PLANE_CHANNELS, PLANE_HOME_CHANNEL, PLANE_POLL_INTERVAL,
+    PLANE_CLI_PATH, PLANE_CREDENTIALS_FILE, PLANE_ALLOWED_USERS,
+    PLANE_REACTION_ONLY_USERS, PLANE_ALLOW_ALL_USERS, PLANE_REPLY_IN_THREAD,
+    PLANE_REPLY_TO_MODE
 
-The only secret is BUZZ_PRIVATE_KEY (nsec or hex) — it belongs in
+The only secret is PLANE_PRIVATE_KEY (nsec or hex) — it belongs in
 ``~/.nyriel/.env``.  It is passed to the CLI via the subprocess
 environment and is never logged.
 """
@@ -77,9 +77,9 @@ def _get_scoped_secret(name, default=None):
     The no-scope path has one more rung for the platform requirement gate:
     ``check_requirements()`` runs at gateway startup BEFORE any per-profile
     secret scope is installed, and ``get_secret`` without a scope simply
-    reads ``os.environ`` — so a Bitwarden-managed ``BUZZ_PRIVATE_KEY``
+    reads ``os.environ`` — so a Bitwarden-managed ``PLANE_PRIVATE_KEY``
     (only ``BWS_ACCESS_TOKEN`` in ``.env``) was invisible to the check and
-    Buzz was silently skipped (#95216). When no scope is active and the
+    Plane was silently skipped (#95216). When no scope is active and the
     process env has no value, consult a one-shot build of the profile's
     secret mapping (``build_profile_secret_scope`` resolves external secret
     sources) so externally managed credentials pass the gate. An ACTIVE
@@ -121,7 +121,7 @@ def _unscoped_profile_secrets() -> Dict[str, str]:
             )
         except Exception:
             logger.warning(
-                "Buzz requirement probe could not build the profile secret "
+                "Plane requirement probe could not build the profile secret "
                 "scope; Bitwarden-managed credentials will not be visible "
                 "to the startup gate (#95216)",
                 exc_info=True,
@@ -149,7 +149,7 @@ def _profile_scoped() -> bool:
 
 
 def _scoped_platform_setting(env_name, extra, key):
-    """Raw read of a non-secret Buzz setting, multiplex-profile-correct.
+    """Raw read of a non-secret Plane setting, multiplex-profile-correct.
 
     Inside a secondary profile scope ``os.environ`` holds the DEFAULT
     profile's YAML-to-env bridge output (#98738), so the profile's
@@ -178,14 +178,14 @@ from gateway.platforms.base import (
 from gateway.config import Platform
 
 
-# Buzz chat messages are Nostr kind 9 events.  ``buzz messages get`` also
+# Plane chat messages are Nostr kind 9 events.  ``plane messages get`` also
 # returns housekeeping kinds (joins, canvas updates, …) — only kind 9 is
 # dispatched to the agent.
 _CHAT_KIND = 9
 # Kinds that carry agent-relevant conversation content and are dispatched
-# (#90309): chat messages (9) plus the Buzz forum kinds — 45001 is a forum
-# post (thread root) and 45003 a comment reply on it.  Block's own ACP
-# harness documents this set (``buzz-acp --kinds 9,46010,40007,45001,
+# (#90309): chat messages (9) plus the Plane forum kinds — 45001 is a forum
+# post (thread root) and 45003 a comment reply on it.  Plane's own ACP
+# harness documents this set (``plane-acp --kinds 9,46010,40007,45001,
 # 45002,45003``); the stream kinds (46010/40007/45002) are left out until
 # their dispatch semantics are confirmed.  ``_is_direct_message_event``
 # deliberately keeps the kind-9-only check: widening it there would let a
@@ -194,13 +194,13 @@ _DISPATCH_KINDS = frozenset({_CHAT_KIND, 45001, 45003})
 _UNRESOLVED_MENTION_ERROR_RE = re.compile(
     r"mention '@(?P<name>[^']+)' does not match a current channel member"
 )
-_BUZZ_PRESENTATION_MENTION_SEPARATOR = "\u200b"
+_PLANE_PRESENTATION_MENTION_SEPARATOR = "\u200b"
 
 
 def _escape_unresolved_presentation_mention(content: str, error: str) -> Optional[str]:
     """Make one CLI-rejected ``@name`` token presentation-only.
 
-    Buzz resolves whitespace-prefixed ``@name`` tokens into notification
+    Plane resolves whitespace-prefixed ``@name`` tokens into notification
     p-tags before signing or publishing. Ordinary prose such as a Nyriel
     ``@session:...`` link can therefore fail mention preflight. Insert an
     invisible separator only after the rejected ``@`` so the rendered text
@@ -220,7 +220,7 @@ def _escape_unresolved_presentation_mention(content: str, error: str) -> Optiona
         re.IGNORECASE,
     )
     escaped, count = token.subn(
-        lambda found: "@" + _BUZZ_PRESENTATION_MENTION_SEPARATOR + found.group(0)[1:],
+        lambda found: "@" + _PLANE_PRESENTATION_MENTION_SEPARATOR + found.group(0)[1:],
         content,
     )
     return escaped if count else None
@@ -230,7 +230,7 @@ _FETCH_LIMIT = 50
 # Bound on the per-channel de-dupe set (events, not bytes).
 _SEEN_CAP = 500
 # Where the per-channel cursors survive a restart, relative to NYRIEL_HOME.
-_CURSOR_STATE_SUBDIR = "buzz"
+_CURSOR_STATE_SUBDIR = "plane"
 _CURSOR_STATE_FILENAME = "channel-cursors.json"
 # Re-run DM discovery (``dms list`` plus the channels-list fallback) every
 # N poll sweeps to pick up conversations opened mid-run.
@@ -298,7 +298,7 @@ def _attachment_origin(value: str) -> Optional[tuple[str, int]]:
     return host, port
 
 # WebSocket transport (NIP-42 authenticated Nostr subscription).
-# kind 44100 is Buzz's channel-membership event — used for live DM discovery.
+# kind 44100 is Plane's channel-membership event — used for live DM discovery.
 _WS_AUTH_TIMEOUT = 20.0
 # Last-resort bound on how long the read loop may wait for a frame. The
 # library keepalive (ping_interval/ping_timeout below) should catch a dead
@@ -309,13 +309,13 @@ _WS_AUTH_TIMEOUT = 20.0
 _WS_READ_IDLE_TIMEOUT = 300.0
 _WS_MAX_MESSAGE_BYTES = 2_000_000
 _WS_MEMBERSHIP_KIND = 44100
-_WS_MEMBERSHIP_SUB_ID = "nyriel-buzz-membership"
+_WS_MEMBERSHIP_SUB_ID = "nyriel-plane-membership"
 
 # Where to look for a credentials JSON (keys: nsec / private_key_hex) when
-# BUZZ_PRIVATE_KEY is not set.  Module-level so tests can point it at a tmpdir.
-_DEFAULT_CREDENTIALS_DIR = Path("~/.config/buzz").expanduser()
+# PLANE_PRIVATE_KEY is not set.  Module-level so tests can point it at a tmpdir.
+_DEFAULT_CREDENTIALS_DIR = Path("~/.config/plane").expanduser()
 
-# Buzz-hosted Blossom media is private to the community. Inbound messages
+# Plane-hosted Blossom media is private to the community. Inbound messages
 # carry media as markdown or bare relay URLs, so the adapter must authenticate
 # and localise those references before the gateway hands them to vision.
 _MEDIA_URL_PATTERN = (
@@ -348,7 +348,7 @@ def _effective_port(parsed) -> Optional[int]:
 
 
 def _is_relay_media_url(url: str, relay_url: str) -> bool:
-    """Return whether *url* is a Buzz media object on the configured relay."""
+    """Return whether *url* is a Plane media object on the configured relay."""
     candidate = urlsplit(url)
     relay = urlsplit(relay_url)
     if candidate.scheme not in ("http", "https"):
@@ -408,7 +408,7 @@ def _load_nostr_auth():
     """Import the sibling nostr_auth module in a loader-agnostic way.
 
     The adapter is imported both as a package module
-    (``plugins.platforms.buzz.adapter``) and as a bare single-file module by
+    (``plugins.platforms.plane.adapter``) and as a bare single-file module by
     the test plugin loader, where relative imports have no parent package.
     """
     try:
@@ -419,7 +419,7 @@ def _load_nostr_auth():
         import importlib.util
 
         path = Path(__file__).with_name("nostr_auth.py")
-        spec = importlib.util.spec_from_file_location("plugin_adapter_buzz_nostr_auth", path)
+        spec = importlib.util.spec_from_file_location("plugin_adapter_plane_nostr_auth", path)
         assert spec is not None and spec.loader is not None
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
@@ -518,22 +518,22 @@ def _normalize_user_ref(ref: str) -> Optional[str]:
 
 
 # ---------------------------------------------------------------------------
-# buzz-cli invocation helpers
+# plane-cli invocation helpers
 # ---------------------------------------------------------------------------
 
 def _resolve_cli_path(configured: str = "") -> str:
-    """Resolve the buzz CLI binary path portably.
+    """Resolve the plane CLI binary path portably.
 
-    Order: explicit config value → ``buzz`` on PATH → ``~/bin/buzz``.
+    Order: explicit config value → ``plane`` on PATH → ``~/bin/plane``.
     Returns "" when nothing is found so callers can raise a config error.
     """
     if configured:
         p = Path(configured).expanduser()
         return str(p) if p.is_file() else ""
-    found = shutil.which("buzz")
+    found = shutil.which("plane")
     if found:
         return found
-    fallback = Path.home() / "bin" / "buzz"
+    fallback = Path.home() / "bin" / "plane"
     return str(fallback) if fallback.is_file() else ""
 
 
@@ -542,7 +542,7 @@ def _credentials_candidates(extra: Optional[dict] = None) -> List[Path]:
     # scope is authoritative (a miss falls to the profile's own config extra,
     # never the default profile's os.environ); unscoped reads keep env
     # precedence plus the external-secret rung.
-    configured = str(_get_scoped_secret("BUZZ_CREDENTIALS_FILE", "") or "").strip() or str(
+    configured = str(_get_scoped_secret("PLANE_CREDENTIALS_FILE", "") or "").strip() or str(
         (extra or {}).get("credentials_file", "") or ""
     ).strip()
     if configured:
@@ -574,7 +574,7 @@ def _resolve_private_key(extra: Optional[dict] = None) -> str:
 
     NEVER log the return value.
     """
-    key = str(_get_scoped_secret("BUZZ_PRIVATE_KEY", "") or "").strip()
+    key = str(_get_scoped_secret("PLANE_PRIVATE_KEY", "") or "").strip()
     if key:
         return key
     data = _resolve_credentials_data(extra)
@@ -587,14 +587,14 @@ def _resolve_private_key(extra: Optional[dict] = None) -> str:
 
 def _resolve_auth_tag(extra: Optional[dict] = None) -> str:
     """Resolve and validate the optional NIP-OA owner-attestation tag."""
-    configured = str(_get_scoped_secret("BUZZ_AUTH_TAG", "") or "").strip()
+    configured = str(_get_scoped_secret("PLANE_AUTH_TAG", "") or "").strip()
     if configured:
         raw: Any = configured
     else:
-        credentials_file = str(_get_scoped_secret("BUZZ_CREDENTIALS_FILE", "") or "").strip() or str(
+        credentials_file = str(_get_scoped_secret("PLANE_CREDENTIALS_FILE", "") or "").strip() or str(
             (extra or {}).get("credentials_file", "") or ""
         ).strip()
-        direct_key = str(_get_scoped_secret("BUZZ_PRIVATE_KEY", "") or "").strip()
+        direct_key = str(_get_scoped_secret("PLANE_PRIVATE_KEY", "") or "").strip()
         if direct_key and not credentials_file:
             return ""
         data = _resolve_credentials_data(extra)
@@ -606,18 +606,18 @@ def _resolve_auth_tag(extra: Optional[dict] = None) -> str:
         try:
             raw = json.loads(raw)
         except json.JSONDecodeError as exc:
-            raise ValueError("Buzz auth tag is not valid JSON") from exc
+            raise ValueError("Plane auth tag is not valid JSON") from exc
     if (
         not isinstance(raw, list)
         or len(raw) != 4
         or raw[0] != "auth"
         or not all(isinstance(part, str) for part in raw)
     ):
-        raise ValueError("Buzz auth tag must be a four-string auth tag")
+        raise ValueError("Plane auth tag must be a four-string auth tag")
     return json.dumps(raw, separators=(",", ":"))
 
 
-async def _exec_buzz(
+async def _exec_plane(
     cli_path: str,
     args: List[str],
     *,
@@ -627,18 +627,18 @@ async def _exec_buzz(
     input_text: Optional[str] = None,
     timeout: float = _CLI_TIMEOUT,
 ) -> Tuple[int, str, str]:
-    """Run the buzz CLI with an argument list (never a shell) and return
+    """Run the plane CLI with an argument list (never a shell) and return
     ``(returncode, stdout, stderr)``.
 
     The private key travels via the subprocess environment only — it never
     appears in argv, so process listings and error logs stay clean.
     """
     env = os.environ.copy()
-    env["BUZZ_RELAY_URL"] = relay_url
-    env["BUZZ_PRIVATE_KEY"] = private_key
-    env.pop("BUZZ_AUTH_TAG", None)
+    env["PLANE_RELAY_URL"] = relay_url
+    env["PLANE_PRIVATE_KEY"] = private_key
+    env.pop("PLANE_AUTH_TAG", None)
     if auth_tag:
-        env["BUZZ_AUTH_TAG"] = auth_tag
+        env["PLANE_AUTH_TAG"] = auth_tag
     proc = await asyncio.create_subprocess_exec(
         cli_path,
         *args,
@@ -655,7 +655,7 @@ async def _exec_buzz(
     except asyncio.TimeoutError:
         proc.kill()
         await proc.wait()
-        return 124, "", json.dumps({"error": "timeout", "message": f"buzz {args[0] if args else ''} timed out after {timeout}s"})
+        return 124, "", json.dumps({"error": "timeout", "message": f"plane {args[0] if args else ''} timed out after {timeout}s"})
     return (
         proc.returncode if proc.returncode is not None else 4,
         stdout.decode("utf-8", errors="replace"),
@@ -697,13 +697,13 @@ def _cli_error_message(
     except ValueError:
         pass
     return _bounded_cli_message(
-        text or f"buzz CLI failed with exit code {returncode}",
+        text or f"plane CLI failed with exit code {returncode}",
         redact_path,
     )
 
 
 def _parse_send_receipt(stdout: str) -> Tuple[Optional[str], Optional[str]]:
-    """Validate the buzz-cli success receipt and return ``(event_id, error)``."""
+    """Validate the plane-cli success receipt and return ``(event_id, error)``."""
     try:
         data = json.loads(stdout or "{}")
     except ValueError:
@@ -738,7 +738,7 @@ def _event_reply_parent_id(event: dict) -> Optional[str]:
     """Resolve a chat event's direct parent event id (NIP-10 ``e`` tags).
 
     Prefer a ``reply``-marked tag, then a ``root``-marked tag, else the last
-    positional ``e`` tag. Buzz Desktop thread replies typically carry both
+    positional ``e`` tag. Plane Desktop thread replies typically carry both
     root and reply markers; the reply marker is the direct parent.
     """
     tags = event.get("tags")
@@ -767,17 +767,17 @@ _EVENT_META_CONTENT_CAP = 500
 
 
 # ---------------------------------------------------------------------------
-# Buzz Adapter
+# Plane Adapter
 # ---------------------------------------------------------------------------
 
-class BuzzAdapter(BasePlatformAdapter):
-    """Poll-based Buzz adapter implementing the BasePlatformAdapter interface.
+class PlaneAdapter(BasePlatformAdapter):
+    """Poll-based Plane adapter implementing the BasePlatformAdapter interface.
 
     Instantiated by the adapter_factory passed to register_platform().
     """
 
     def __init__(self, config, **kwargs):
-        platform = Platform("buzz")
+        platform = Platform("plane")
         super().__init__(config=config, platform=platform)
 
         extra = getattr(config, "extra", {}) or {}
@@ -786,7 +786,7 @@ class BuzzAdapter(BasePlatformAdapter):
         # Connection settings (env vars override config.yaml; under a
         # secondary multiplex profile scope the profile's extra wins and
         # env — the default profile's bridge output — is not consulted)
-        _relay_raw = _scoped_platform_setting("BUZZ_RELAY_URL", extra, "relay_url")
+        _relay_raw = _scoped_platform_setting("PLANE_RELAY_URL", extra, "relay_url")
         self.relay_url = (_relay_raw or extra.get("relay_url", "")).strip()
         
         configured_attachment_hosts = extra.get("attachment_hosts", [])
@@ -803,23 +803,23 @@ class BuzzAdapter(BasePlatformAdapter):
         relay_origin = _attachment_origin(self.relay_url)
         if relay_origin is not None:
             self._attachment_origins.add(relay_origin)
-        _cli_raw = _scoped_platform_setting("BUZZ_CLI_PATH", extra, "cli_path")
+        _cli_raw = _scoped_platform_setting("PLANE_CLI_PATH", extra, "cli_path")
         self.cli_path = _resolve_cli_path(
             str(_cli_raw or "").strip() or str(extra.get("cli_path", "") or "")
         )
 
         # Channels to watch: env csv > extra list/csv; empty = all joined channels
-        raw_channels = _scoped_platform_setting("BUZZ_CHANNELS", extra, "channels")
+        raw_channels = _scoped_platform_setting("PLANE_CHANNELS", extra, "channels")
         if raw_channels is None:
             raw_channels = extra.get("channels", [])
         if isinstance(raw_channels, str):
             raw_channels = raw_channels.split(",")
         self.channels: List[str] = [c.strip() for c in raw_channels if isinstance(c, str) and c.strip()]
 
-        _home_raw = _scoped_platform_setting("BUZZ_HOME_CHANNEL", extra, "home_channel")
+        _home_raw = _scoped_platform_setting("PLANE_HOME_CHANNEL", extra, "home_channel")
         self.home_channel = (_home_raw or str(extra.get("home_channel", "") or "")).strip()
 
-        _pi_raw = _scoped_platform_setting("BUZZ_POLL_INTERVAL", extra, "poll_interval")
+        _pi_raw = _scoped_platform_setting("PLANE_POLL_INTERVAL", extra, "poll_interval")
         try:
             interval = float(_pi_raw or extra.get("poll_interval", _DEFAULT_POLL_INTERVAL))
         except (TypeError, ValueError):
@@ -829,8 +829,8 @@ class BuzzAdapter(BasePlatformAdapter):
         # Whether channel messages must @mention the agent to get a response.
         # Defaults to True (respond only when addressed). Set False to make the
         # agent respond to every message in a watched channel. DMs always
-        # dispatch regardless. Env (BUZZ_REQUIRE_MENTION) overrides config.yaml.
-        _rm_raw = _scoped_platform_setting("BUZZ_REQUIRE_MENTION", extra, "require_mention")
+        # dispatch regardless. Env (PLANE_REQUIRE_MENTION) overrides config.yaml.
+        _rm_raw = _scoped_platform_setting("PLANE_REQUIRE_MENTION", extra, "require_mention")
         if _rm_raw is None:
             _rm_cfg = extra.get("require_mention", True)
         else:
@@ -840,32 +840,32 @@ class BuzzAdapter(BasePlatformAdapter):
         # Reply anchoring: "first"/"all" thread the reply onto the parent event
         # id, "off" posts every reply as a normal top-level channel message.
         # Mirrors the Discord/Telegram adapters, which already honor this
-        # PlatformConfig field; without it Buzz threaded unconditionally.
-        # Env (BUZZ_REPLY_TO_MODE) overrides config.yaml.
-        _rtm = (os.getenv("BUZZ_REPLY_TO_MODE") or getattr(config, "reply_to_mode", "first")
+        # PlatformConfig field; without it Plane threaded unconditionally.
+        # Env (PLANE_REPLY_TO_MODE) overrides config.yaml.
+        _rtm = (os.getenv("PLANE_REPLY_TO_MODE") or getattr(config, "reply_to_mode", "first")
                 or "first")
         self._reply_to_mode: str = str(_rtm).strip().lower()
-        # Slack-convention alias: platforms.buzz.extra.reply_in_thread: false
+        # Slack-convention alias: platforms.plane.extra.reply_in_thread: false
         # (the key users already know from Slack) opts out of threading the
-        # same way reply_to_mode: off does. Env (BUZZ_REPLY_IN_THREAD)
+        # same way reply_to_mode: off does. Env (PLANE_REPLY_IN_THREAD)
         # overrides config.yaml. See #95842 / #75082.
-        _rit_raw = os.getenv("BUZZ_REPLY_IN_THREAD")
+        _rit_raw = os.getenv("PLANE_REPLY_IN_THREAD")
         _rit = extra.get("reply_in_thread") if _rit_raw is None else _rit_raw
         if _rit is not None and str(_rit).strip().lower() in ("false", "0", "no", "off"):
             self._reply_to_mode = "off"
 
         # Inbound transport: "auto" (WebSocket with poll fallback, default),
         # "websocket" (require WS; fail connect when it can't authenticate),
-        # or "poll" (CLI polling only). Env (BUZZ_TRANSPORT) overrides
+        # or "poll" (CLI polling only). Env (PLANE_TRANSPORT) overrides
         # config.yaml.
-        _transport_raw = _scoped_platform_setting("BUZZ_TRANSPORT", extra, "transport")
+        _transport_raw = _scoped_platform_setting("PLANE_TRANSPORT", extra, "transport")
         _transport = (
             _transport_raw or str(extra.get("transport", "auto") or "auto")
         ).strip().lower()
         self.transport = _transport if _transport in ("auto", "websocket", "poll") else "auto"
 
         # Auth: entries may be hex pubkeys or npubs; normalized to hex
-        raw_allowed = _scoped_platform_setting("BUZZ_ALLOWED_USERS", extra, "allowed_users")
+        raw_allowed = _scoped_platform_setting("PLANE_ALLOWED_USERS", extra, "allowed_users")
         if raw_allowed is None:
             raw_allowed = extra.get("allowed_users", [])
         if isinstance(raw_allowed, str):
@@ -882,7 +882,7 @@ class BuzzAdapter(BasePlatformAdapter):
         # If a pubkey appears in both sets, allowed_users takes precedence: the
         # normal authorized dispatch path runs and this reaction-only path does not.
         raw_reaction_only = (
-            os.getenv("BUZZ_REACTION_ONLY_USERS")
+            os.getenv("PLANE_REACTION_ONLY_USERS")
             or extra.get("reaction_only_users", [])
         )
         if isinstance(raw_reaction_only, str):
@@ -899,7 +899,7 @@ class BuzzAdapter(BasePlatformAdapter):
         self._private_key: str = ""
         self._auth_tag: str = ""
 
-        # Identity — filled in by connect() from ``buzz users get``
+        # Identity — filled in by connect() from ``plane users get``
         self._self_pubkey: str = ""
         self._self_npub: str = ""
         self._display_name: str = ""
@@ -939,11 +939,11 @@ class BuzzAdapter(BasePlatformAdapter):
 
     @property
     def name(self) -> str:
-        return "Buzz"
+        return "Plane"
 
     @staticmethod
     def normalize_user_id(user_id: str) -> Optional[str]:
-        """Normalize a Buzz user reference (hex pubkey or npub) to hex.
+        """Normalize a Plane user reference (hex pubkey or npub) to hex.
 
         Optional hook consumed by ``gateway/authz_mixin`` when matching the
         profile allowlist carried in ``config.extra.allowed_users`` (#98738):
@@ -952,13 +952,13 @@ class BuzzAdapter(BasePlatformAdapter):
         """
         return _normalize_user_ref(user_id)
 
-    # ── buzz-cli plumbing ─────────────────────────────────────────────────
+    # ── plane-cli plumbing ─────────────────────────────────────────────────
 
     async def _run_cli(self, args: List[str], *, input_text: Optional[str] = None) -> Tuple[int, str, str]:
         if not self._private_key:
             self._private_key = _resolve_private_key(self._extra)
             self._auth_tag = _resolve_auth_tag(self._extra)
-        return await _exec_buzz(
+        return await _exec_plane(
             self.cli_path,
             args,
             relay_url=self.relay_url,
@@ -972,23 +972,23 @@ class BuzzAdapter(BasePlatformAdapter):
     async def connect(self, *, is_reconnect: bool = False) -> bool:
         """Verify relay credentials, seed high-water marks, start polling."""
         if not self.relay_url:
-            logger.error("Buzz: relay URL must be configured")
-            self._set_fatal_error("config_missing", "BUZZ_RELAY_URL must be set", retryable=False)
+            logger.error("Plane: relay URL must be configured")
+            self._set_fatal_error("config_missing", "PLANE_RELAY_URL must be set", retryable=False)
             return False
         if not self.cli_path:
-            logger.error("Buzz: buzz CLI binary not found (set BUZZ_CLI_PATH or put 'buzz' on PATH)")
-            self._set_fatal_error("cli_missing", "buzz CLI binary not found", retryable=False)
+            logger.error("Plane: plane CLI binary not found (set PLANE_CLI_PATH or put 'plane' on PATH)")
+            self._set_fatal_error("cli_missing", "plane CLI binary not found", retryable=False)
             return False
         try:
             self._private_key = _resolve_private_key(self._extra)
             self._auth_tag = _resolve_auth_tag(self._extra)
         except ValueError as exc:
-            logger.error("Buzz: invalid owner-auth configuration — %s", exc)
+            logger.error("Plane: invalid owner-auth configuration — %s", exc)
             self._set_fatal_error("config_invalid", str(exc), retryable=False)
             return False
         if not self._private_key:
-            logger.error("Buzz: no private key (set BUZZ_PRIVATE_KEY or a credentials file)")
-            self._set_fatal_error("config_missing", "BUZZ_PRIVATE_KEY must be set", retryable=False)
+            logger.error("Plane: no private key (set PLANE_PRIVATE_KEY or a credentials file)")
+            self._set_fatal_error("config_missing", "PLANE_PRIVATE_KEY must be set", retryable=False)
             return False
 
         # Learn our own identity: pubkey drives self-echo suppression and
@@ -996,33 +996,33 @@ class BuzzAdapter(BasePlatformAdapter):
         code, out, err = await self._run_cli(["users", "get"])
         if code != 0:
             message = _cli_error_message(err, code)
-            logger.error("Buzz: failed to fetch own profile from %s — %s", self.relay_url, message)
+            logger.error("Plane: failed to fetch own profile from %s — %s", self.relay_url, message)
             self._set_fatal_error("connect_failed", message, retryable=code == 2)
             return False
         profiles = _parse_json_list(out)
         if not profiles or not profiles[0].get("pubkey"):
-            logger.error("Buzz: 'users get' returned no profile — is the key a member of this community?")
-            self._set_fatal_error("connect_failed", "buzz users get returned no profile", retryable=True)
+            logger.error("Plane: 'users get' returned no profile — is the key a member of this community?")
+            self._set_fatal_error("connect_failed", "plane users get returned no profile", retryable=True)
             return False
         self._self_pubkey = str(profiles[0]["pubkey"]).lower()
         self._display_name = str(profiles[0].get("display_name") or "").strip()
         self._self_npub = hex_to_npub(self._self_pubkey) or ""
 
-        # Prevent two profiles from driving the same Buzz identity on the
+        # Prevent two profiles from driving the same Plane identity on the
         # same relay (duplicate replies, split de-dupe state). Mirrors the
         # IRC adapter's scoped-lock pattern.
         try:
             from gateway.status import acquire_scoped_lock
 
             lock_key = f"{self.relay_url}:{self._self_pubkey}"
-            if not acquire_scoped_lock("buzz", lock_key):
+            if not acquire_scoped_lock("plane", lock_key):
                 logger.error(
-                    "Buzz: identity %s… on %s already in use by another profile",
+                    "Plane: identity %s… on %s already in use by another profile",
                     self._self_pubkey[:8],
                     self.relay_url,
                 )
                 self._set_fatal_error(
-                    "lock_conflict", "Buzz identity in use by another profile", retryable=False
+                    "lock_conflict", "Plane identity in use by another profile", retryable=False
                 )
                 return False
             self._lock_key = lock_key
@@ -1033,7 +1033,7 @@ class BuzzAdapter(BasePlatformAdapter):
         code, out, err = await self._run_cli(["channels", "list"])
         if code != 0:
             message = _cli_error_message(err, code)
-            logger.error("Buzz: failed to list channels — %s", message)
+            logger.error("Plane: failed to list channels — %s", message)
             self._set_fatal_error("connect_failed", message, retryable=code == 2)
             return False
         listed = _parse_json_list(out)
@@ -1047,8 +1047,8 @@ class BuzzAdapter(BasePlatformAdapter):
                 self._channel_meta[str(ch["channel_id"])] = ch
         watch = self.channels or list(self._channel_names)
         if not watch:
-            logger.error("Buzz: no channels to watch (configure BUZZ_CHANNELS or join a channel)")
-            self._set_fatal_error("config_missing", "no Buzz channels to watch", retryable=False)
+            logger.error("Plane: no channels to watch (configure PLANE_CHANNELS or join a channel)")
+            self._set_fatal_error("config_missing", "no Plane channels to watch", retryable=False)
             return False
 
         # Seed high-water marks from the newest events so a (re)start never
@@ -1061,7 +1061,7 @@ class BuzzAdapter(BasePlatformAdapter):
         self._load_cursors()
         for channel_id in watch:
             if channel_id in self._restricted_channels:
-                logger.debug("Buzz: skipping restricted channel %s (relay rejected subscription)", channel_id)
+                logger.debug("Plane: skipping restricted channel %s (relay rejected subscription)", channel_id)
                 continue
             await self._seed_channel(channel_id, chat_type="group")
         await self._discover_dms(seed=True)
@@ -1078,7 +1078,7 @@ class BuzzAdapter(BasePlatformAdapter):
             elif self.transport == "websocket":
                 self._set_fatal_error(
                     "ws_auth_failed",
-                    "Buzz WebSocket transport did not authenticate (transport=websocket)",
+                    "Plane WebSocket transport did not authenticate (transport=websocket)",
                     retryable=True,
                 )
                 await self.disconnect()
@@ -1087,7 +1087,7 @@ class BuzzAdapter(BasePlatformAdapter):
             self._poll_task = asyncio.create_task(self._poll_loop())
         self._mark_connected()
         logger.info(
-            "Buzz: connected to %s as %s, watching %d channel(s) via %s%s",
+            "Plane: connected to %s as %s, watching %d channel(s) via %s%s",
             self.relay_url,
             self._display_name or self._self_npub[:16],
             len(self._channel_state),
@@ -1106,7 +1106,7 @@ class BuzzAdapter(BasePlatformAdapter):
             try:
                 from gateway.status import release_scoped_lock
 
-                release_scoped_lock("buzz", lock_key)
+                release_scoped_lock("plane", lock_key)
             except Exception:
                 pass
             self._lock_key = None
@@ -1246,7 +1246,7 @@ class BuzzAdapter(BasePlatformAdapter):
         member "Nyriel".
 
         Duplicate display names are ambiguous: the span is consumed but no
-        one is tagged (presentation-only), mirroring how Buzz treats
+        one is tagged (presentation-only), mirroring how Plane treats
         ambiguous names — never pick an arbitrary member.
         """
         if "@" not in content:
@@ -1323,7 +1323,7 @@ class BuzzAdapter(BasePlatformAdapter):
         escaped = _escape_unresolved_presentation_mention(content, err)
         if escaped is not None:
             logger.info(
-                "Buzz: retrying message after unresolved presentation-mention preflight"
+                "Plane: retrying message after unresolved presentation-mention preflight"
             )
             code, out, err = await self._run_cli(args, input_text=escaped)
             if code == 0:
@@ -1381,11 +1381,11 @@ class BuzzAdapter(BasePlatformAdapter):
         return SendResult(success=True, message_id=event_id)
 
     async def send_typing(self, chat_id: str, metadata=None) -> None:
-        """Buzz has no typing indicator API — no-op."""
+        """Plane has no typing indicator API — no-op."""
         pass
 
     async def send_reaction(self, chat_id: str, message_id: str, emoji: str) -> bool:
-        """Add a reaction to a message via buzz-cli.
+        """Add a reaction to a message via plane-cli.
 
         Returns True on success, False on failure. Errors are logged but not
         raised — reactions are best-effort and should never block the main
@@ -1393,7 +1393,7 @@ class BuzzAdapter(BasePlatformAdapter):
         """
         if not self.cli_path or not emoji or not message_id:
             return False
-        # buzz-cli: `reactions add --event <64-char hex event id> --emoji <e>`.
+        # plane-cli: `reactions add --event <64-char hex event id> --emoji <e>`.
         # The event id IS the message_id we recorded on dispatch; channel is
         # not a parameter to this subcommand.
         args = [
@@ -1404,7 +1404,7 @@ class BuzzAdapter(BasePlatformAdapter):
         code, _out, err = await self._run_cli(args)
         if code != 0:
             logger.debug(
-                "Buzz: reaction add failed for message %s in %s — %s",
+                "Plane: reaction add failed for message %s in %s — %s",
                 message_id[:12], chat_id, _cli_error_message(err, code),
             )
             return False
@@ -1420,23 +1420,23 @@ class BuzzAdapter(BasePlatformAdapter):
     ) -> SendResult:
         """Edit a previously sent message.
 
-        Implementing this is what lets the gateway stream a reply on Buzz: the
+        Implementing this is what lets the gateway stream a reply on Plane: the
         stream consumer sends a first partial message and then re-edits that one
         message as tokens arrive.  Without it the adapter inherits the base
         stub, which returns ``success=False``, and the whole answer is delivered
         in one block when the turn finishes.
 
-        ``buzz-cli`` reports a NEW event id for the edit itself, but the edit
+        ``plane-cli`` reports a NEW event id for the edit itself, but the edit
         TARGET stays the original id, and the stream consumer holds a single
         ``message_id`` across the whole stream.  So this returns the id it was
         given, not the one the CLI reports; returning the CLI's id would make
         every edit after the first address a message that was never sent.
 
-        ``finalize`` is a no-op here.  Buzz edits carry no lifecycle state, the
+        ``finalize`` is a no-op here.  Plane edits carry no lifecycle state, the
         same as Telegram, Slack and Discord.
         """
         if not message_id:
-            return SendResult(success=False, error="Buzz edit needs a message id")
+            return SendResult(success=False, error="Plane edit needs a message id")
         if not content:
             return SendResult(success=False, error="Empty message")
         args = ["messages", "edit", "--event", str(message_id), "--content", "-"]
@@ -1493,7 +1493,7 @@ class BuzzAdapter(BasePlatformAdapter):
         reply_to: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> SendResult:
-        """Upload one local file through the Buzz CLI and verify its receipt."""
+        """Upload one local file through the Plane CLI and verify its receipt."""
         local = Path(file_path).expanduser()
         if not local.is_file():
             return SendResult(success=False, error="Media file not found")
@@ -1541,7 +1541,7 @@ class BuzzAdapter(BasePlatformAdapter):
                 metadata=metadata,
                 probe=False,
             )
-        # Markdown renders in Buzz, so a URL arrives as a clickable image link.
+        # Markdown renders in Plane, so a URL arrives as a clickable image link.
         text = f"{caption}\n{image_url}" if caption else image_url
         return await self.send(chat_id, text, reply_to=reply_to, metadata=metadata)
 
@@ -1555,7 +1555,7 @@ class BuzzAdapter(BasePlatformAdapter):
         metadata: Optional[Dict[str, Any]] = None,
         probe: bool = True,
     ) -> SendResult:
-        """Upload a local file and publish it as a native Buzz attachment.
+        """Upload a local file and publish it as a native Plane attachment.
 
         ``probe=False`` skips the existence re-check when the caller already
         verified the file — a second probe could race into a false
@@ -1599,7 +1599,7 @@ class BuzzAdapter(BasePlatformAdapter):
         metadata: Optional[Dict[str, Any]] = None,
         **kwargs,
     ) -> SendResult:
-        """Upload a local image through Buzz's native ``--file`` path.
+        """Upload a local image through Plane's native ``--file`` path.
 
         Missing or non-file paths retain the Base fallback so host
         filesystem paths are never echoed into chat (#74999).
@@ -1633,7 +1633,7 @@ class BuzzAdapter(BasePlatformAdapter):
         metadata: Optional[Dict[str, Any]] = None,
         **kwargs,
     ) -> SendResult:
-        """Upload a local document through Buzz's native ``--file`` path."""
+        """Upload a local document through Plane's native ``--file`` path."""
         return await self._send_file_attachment(
             chat_id,
             Path(file_path),
@@ -1651,7 +1651,7 @@ class BuzzAdapter(BasePlatformAdapter):
         metadata: Optional[Dict[str, Any]] = None,
         **kwargs,
     ) -> SendResult:
-        """Upload a local video through Buzz's native ``--file`` path."""
+        """Upload a local video through Plane's native ``--file`` path."""
         return await self._send_file_attachment(
             chat_id,
             Path(video_path),
@@ -1669,7 +1669,7 @@ class BuzzAdapter(BasePlatformAdapter):
         metadata: Optional[Dict[str, Any]] = None,
         **kwargs,
     ) -> SendResult:
-        """Upload a local audio file through Buzz's native ``--file`` path."""
+        """Upload a local audio file through Plane's native ``--file`` path."""
         return await self._send_file_attachment(
             chat_id,
             Path(audio_path),
@@ -1706,7 +1706,7 @@ class BuzzAdapter(BasePlatformAdapter):
         parsed = urlsplit(self.relay_url.strip())
         scheme = {"http": "ws", "https": "wss"}.get(parsed.scheme, parsed.scheme)
         if scheme not in ("ws", "wss") or not parsed.netloc:
-            raise ValueError("Buzz relay URL must use http(s) or ws(s)")
+            raise ValueError("Plane relay URL must use http(s) or ws(s)")
         return urlunsplit((scheme, parsed.netloc, parsed.path or "", parsed.query, ""))
 
     async def _start_websocket(self) -> bool:
@@ -1716,7 +1716,7 @@ class BuzzAdapter(BasePlatformAdapter):
 
             self._websocket_url()
         except Exception as e:
-            logger.info("Buzz: WebSocket transport unavailable (%s); falling back to polling", e)
+            logger.info("Plane: WebSocket transport unavailable (%s); falling back to polling", e)
             return False
         self._ws_ready = asyncio.Event()
         self._membership_since = int(time.time())
@@ -1724,7 +1724,7 @@ class BuzzAdapter(BasePlatformAdapter):
         try:
             await asyncio.wait_for(self._ws_ready.wait(), timeout=_WS_AUTH_TIMEOUT + 5)
         except (asyncio.TimeoutError, TimeoutError):
-            logger.warning("Buzz: WebSocket did not authenticate in time")
+            logger.warning("Plane: WebSocket did not authenticate in time")
             self._ws_active = False
             if self._ws_task and not self._ws_task.done():
                 self._ws_task.cancel()
@@ -1739,14 +1739,14 @@ class BuzzAdapter(BasePlatformAdapter):
     async def _authenticate_websocket(self, websocket) -> None:
         """NIP-42: wait for the relay's AUTH challenge, answer with a signed
         kind-22242 event (plus the optional NIP-OA owner-attestation tag from
-        BUZZ_AUTH_TAG), and wait for the OK acknowledgment."""
+        PLANE_AUTH_TAG), and wait for the OK acknowledgment."""
         build_auth_event = _load_nostr_auth().build_auth_event
 
         raw = await asyncio.wait_for(websocket.recv(), timeout=_WS_AUTH_TIMEOUT)
         message = json.loads(raw)
         if not isinstance(message, list) or len(message) < 2 or message[0] != "AUTH":
-            raise ConnectionError("Buzz relay did not send a NIP-42 AUTH challenge")
-        # BUZZ_AUTH_TAG is per-identity NIP-OA owner attestation, so it must
+            raise ConnectionError("Plane relay did not send a NIP-42 AUTH challenge")
+        # PLANE_AUTH_TAG is per-identity NIP-OA owner attestation, so it must
         # resolve through the profile secret scope (#98738): inside a scoped
         # multiplex profile a missing tag fails closed to "" instead of
         # attaching the default profile's tag from os.environ, while
@@ -1776,10 +1776,10 @@ class BuzzAdapter(BasePlatformAdapter):
             if response[0] == "OK" and len(response) >= 4 and response[1] == event["id"]:
                 if response[2] is True:
                     return
-                raise ConnectionError(f"Buzz WebSocket AUTH rejected: {response[3]}")
+                raise ConnectionError(f"Plane WebSocket AUTH rejected: {response[3]}")
             if response[0] in ("NOTICE", "CLOSED"):
                 detail = response[-1] if len(response) > 1 else "authentication failed"
-                raise ConnectionError(f"Buzz WebSocket AUTH failed: {detail}")
+                raise ConnectionError(f"Plane WebSocket AUTH failed: {detail}")
 
     async def _send_channel_subscription(self, websocket, subscription_id: str, channel_id: str) -> None:
         state = self._channel_state.get(channel_id) or {}
@@ -1812,7 +1812,7 @@ class BuzzAdapter(BasePlatformAdapter):
         for index, channel_id in enumerate(list(self._channel_state)):
             if channel_id in self._restricted_channels:
                 continue
-            subscription_id = f"nyriel-buzz-{index}"
+            subscription_id = f"nyriel-plane-{index}"
             subscriptions[subscription_id] = channel_id
             await self._send_channel_subscription(websocket, subscription_id, channel_id)
         if self._self_pubkey:
@@ -1836,10 +1836,10 @@ class BuzzAdapter(BasePlatformAdapter):
         for channel_id in list(self._channel_state):
             if channel_id in before:
                 continue
-            subscription_id = f"nyriel-buzz-dm-{len(subscriptions)}"
+            subscription_id = f"nyriel-plane-dm-{len(subscriptions)}"
             subscriptions[subscription_id] = channel_id
             await self._send_channel_subscription(websocket, subscription_id, channel_id)
-            logger.info("Buzz: subscribed to new conversation %s", channel_id)
+            logger.info("Plane: subscribed to new conversation %s", channel_id)
 
     async def _handle_membership_event(self, websocket, subscriptions: Dict[str, Optional[str]], event: dict) -> None:
         """A membership event p-tagged to us: rediscover conversations and
@@ -1871,7 +1871,7 @@ class BuzzAdapter(BasePlatformAdapter):
             except asyncio.CancelledError:
                 raise
             except Exception:
-                logger.warning("Buzz: WebSocket discovery sweep failed", exc_info=True)
+                logger.warning("Plane: WebSocket discovery sweep failed", exc_info=True)
 
     async def _websocket_loop(self) -> None:
         """Persistent authenticated subscription with bounded reconnect
@@ -1923,7 +1923,7 @@ class BuzzAdapter(BasePlatformAdapter):
                                 try:
                                     message = json.loads(raw)
                                 except (ValueError, TypeError):
-                                    logger.warning("Buzz: ignoring malformed WebSocket frame")
+                                    logger.warning("Plane: ignoring malformed WebSocket frame")
                                     continue
                                 if not isinstance(message, list) or not message:
                                     continue
@@ -1961,7 +1961,7 @@ class BuzzAdapter(BasePlatformAdapter):
                                     )
                                     if is_membership_rejection and closed_channel:
                                         logger.warning(
-                                            "Buzz: relay permanently rejected channel %s (%s) — "
+                                            "Plane: relay permanently rejected channel %s (%s) — "
                                             "removing from watch list",
                                             closed_channel, detail,
                                         )
@@ -1971,7 +1971,7 @@ class BuzzAdapter(BasePlatformAdapter):
                                     else:
                                         raise ConnectionError(str(detail))
                                 elif message[0] == "NOTICE":
-                                    logger.warning("Buzz: relay notice: %s", message[-1])
+                                    logger.warning("Plane: relay notice: %s", message[-1])
                         finally:
                             discovery_task.cancel()
                             try:
@@ -1982,7 +1982,7 @@ class BuzzAdapter(BasePlatformAdapter):
                     raise
                 except Exception as e:
                     self._ws_active = False
-                    logger.warning("Buzz: WebSocket disconnected; retrying in %.1fs: %s", backoff, e)
+                    logger.warning("Plane: WebSocket disconnected; retrying in %.1fs: %s", backoff, e)
                     await asyncio.sleep(backoff)
                     backoff = min(backoff * 2, 30.0)
         finally:
@@ -2004,7 +2004,7 @@ class BuzzAdapter(BasePlatformAdapter):
                 except asyncio.CancelledError:
                     raise
                 except Exception:
-                    logger.warning("Buzz: poll sweep failed", exc_info=True)
+                    logger.warning("Plane: poll sweep failed", exc_info=True)
         except asyncio.CancelledError:
             raise
 
@@ -2040,7 +2040,7 @@ class BuzzAdapter(BasePlatformAdapter):
                 return
             data = json.loads(path.read_text(encoding="utf-8"))
         except Exception:
-            logger.debug("Buzz: could not read channel cursors", exc_info=True)
+            logger.debug("Plane: could not read channel cursors", exc_info=True)
             return
         if not isinstance(data, dict):
             return
@@ -2090,7 +2090,7 @@ class BuzzAdapter(BasePlatformAdapter):
 
             atomic_json_write(self._cursor_path(), payload, indent=None)
         except Exception:
-            logger.debug("Buzz: could not persist channel cursors", exc_info=True)
+            logger.debug("Plane: could not persist channel cursors", exc_info=True)
 
     @staticmethod
     def _cursor_mark(state: dict) -> tuple:
@@ -2130,7 +2130,7 @@ class BuzzAdapter(BasePlatformAdapter):
         )
         if code != 0:
             logger.warning(
-                "Buzz: could not seed channel %s — %s", channel_id, _cli_error_message(err, code)
+                "Plane: could not seed channel %s — %s", channel_id, _cli_error_message(err, code)
             )
             # Fall back to "now" so a transiently unreadable channel does not
             # replay its whole history once it becomes readable.
@@ -2208,7 +2208,7 @@ class BuzzAdapter(BasePlatformAdapter):
             if not seed and not self.channels:
                 await self._seed_channel(ch_id, chat_type="group")
                 logger.info(
-                    "Buzz: adopted newly joined channel %s (%s)",
+                    "Plane: adopted newly joined channel %s (%s)",
                     ch_id,
                     self._channel_names.get(ch_id, ch_id),
                 )
@@ -2225,7 +2225,7 @@ class BuzzAdapter(BasePlatformAdapter):
         code, out, err = await self._run_cli(args)
         if code != 0:
             logger.debug(
-                "Buzz: poll of channel %s failed — %s", channel_id, _cli_error_message(err, code)
+                "Plane: poll of channel %s failed — %s", channel_id, _cli_error_message(err, code)
             )
             return
         before = self._cursor_mark(state)
@@ -2300,17 +2300,17 @@ class BuzzAdapter(BasePlatformAdapter):
     @staticmethod
     def _imeta_attachments(event: dict) -> List[dict]:
         """Return bounded, structurally valid NIP-94 attachment metadata."""
-        attachments, _rejected = BuzzAdapter._parse_imeta_attachments(event)
+        attachments, _rejected = PlaneAdapter._parse_imeta_attachments(event)
         return attachments
 
     @staticmethod
     def _attachment_rejection_note(rejected: int) -> str:
         """Return a fixed-width diagnostic for malformed or excess metadata."""
         shown = str(rejected) if rejected <= 999 else "999+"
-        return f"[{shown} Buzz attachment(s) rejected as malformed or over limits.]"
+        return f"[{shown} Plane attachment(s) rejected as malformed or over limits.]"
 
     async def _download_attachment(self, metadata: dict) -> Optional[CachedMedia]:
-        """Download, integrity-check, and cache one authorized Buzz attachment."""
+        """Download, integrity-check, and cache one authorized Plane attachment."""
         url = metadata["url"]
         try:
             parsed_url = urlsplit(url)
@@ -2325,7 +2325,7 @@ class BuzzAdapter(BasePlatformAdapter):
             or origin not in self._attachment_origins
         ):
             logger.warning(
-                "Buzz: refusing attachment from untrusted origin %s:%s",
+                "Plane: refusing attachment from untrusted origin %s:%s",
                 origin[0] or "<missing>",
                 origin[1],
             )
@@ -2344,7 +2344,7 @@ class BuzzAdapter(BasePlatformAdapter):
                     async with client.stream("GET", url) as response:
                         if response.status_code != 200:
                             logger.warning(
-                                "Buzz: attachment download returned HTTP %s",
+                                "Plane: attachment download returned HTTP %s",
                                 response.status_code,
                             )
                             return None
@@ -2356,24 +2356,24 @@ class BuzzAdapter(BasePlatformAdapter):
                                 return None
                             if declared_response_size != metadata["size"]:
                                 logger.warning(
-                                    "Buzz: attachment Content-Length does not match imeta size"
+                                    "Plane: attachment Content-Length does not match imeta size"
                                 )
                                 return None
                         data = bytearray()
                         async for chunk in response.aiter_bytes():
                             data.extend(chunk)
                             if len(data) > metadata["size"]:
-                                logger.warning("Buzz: attachment exceeded its declared size")
+                                logger.warning("Plane: attachment exceeded its declared size")
                                 return None
         except (TimeoutError, httpx.HTTPError, OSError, ValueError) as exc:
-            logger.warning("Buzz: attachment download failed: %s", exc)
+            logger.warning("Plane: attachment download failed: %s", exc)
             return None
 
         if len(data) != metadata["size"]:
-            logger.warning("Buzz: attachment size does not match imeta")
+            logger.warning("Plane: attachment size does not match imeta")
             return None
         if hashlib.sha256(data).hexdigest() != metadata["sha256"]:
-            logger.warning("Buzz: attachment SHA-256 does not match imeta")
+            logger.warning("Plane: attachment SHA-256 does not match imeta")
             return None
         try:
             return cache_media_bytes(
@@ -2382,7 +2382,7 @@ class BuzzAdapter(BasePlatformAdapter):
                 mime_type=metadata["mime_type"],
             )
         except (OSError, ValueError) as exc:
-            logger.warning("Buzz: attachment cache write failed: %s", exc)
+            logger.warning("Plane: attachment cache write failed: %s", exc)
             return None
 
     async def _cache_inbound_attachments(
@@ -2451,8 +2451,8 @@ class BuzzAdapter(BasePlatformAdapter):
         ):
             return
 
-        # Adapter-level allow-list (the gateway applies BUZZ_ALLOWED_USERS /
-        # BUZZ_ALLOW_ALL_USERS centrally as well; empty list = no filter here).
+        # Adapter-level allow-list (the gateway applies PLANE_ALLOWED_USERS /
+        # PLANE_ALLOW_ALL_USERS centrally as well; empty list = no filter here).
         if self._allowed_pubkeys and pubkey not in self._allowed_pubkeys:
             explicitly_tagged = any(
                 isinstance(tag, (list, tuple))
@@ -2467,7 +2467,7 @@ class BuzzAdapter(BasePlatformAdapter):
                 and self._is_mentioned(content)
             ):
                 await self.send_reaction(channel_id, event_id, "👀")
-            logger.debug("Buzz: ignoring message from unauthorized pubkey %s…", pubkey[:8])
+            logger.debug("Plane: ignoring message from unauthorized pubkey %s…", pubkey[:8])
             return
 
         # Strip a leading @mention so slash commands (@Chip /whoami ->
@@ -2508,7 +2508,7 @@ class BuzzAdapter(BasePlatformAdapter):
             failed = len(attachment_metadata) - len(attachments)
             dispatch_text = (
                 f"{dispatch_text}\n"
-                f"[{failed} Buzz attachment(s) could not be downloaded or failed integrity checks.]"
+                f"[{failed} Plane attachment(s) could not be downloaded or failed integrity checks.]"
             ).strip()
 
         message_type = MessageType.TEXT
@@ -2547,7 +2547,7 @@ class BuzzAdapter(BasePlatformAdapter):
 
     # ── DM classification (issue #68871) ──────────────────────────────────
     #
-    # ``buzz dms list`` returns [] on some hosted relays even when DM
+    # ``plane dms list`` returns [] on some hosted relays even when DM
     # conversations exist, so DMs can leak in through ``channels list`` as
     # chat_type="group".  Relay-materialized DMs are named "DM" with an empty
     # description, which periodic discovery promotes to DM even when messages
@@ -2610,7 +2610,7 @@ class BuzzAdapter(BasePlatformAdapter):
             return
         state["chat_type"] = "dm"
         self._channel_names.setdefault(channel_id, "DM")
-        logger.info("Buzz: conversation %s reclassified as DM (message p-tagged to self)", channel_id)
+        logger.info("Plane: conversation %s reclassified as DM (message p-tagged to self)", channel_id)
 
     def _is_mentioned(self, content: str) -> bool:
         """True when text explicitly addresses this agent (npub, hex, or @name)."""
@@ -2716,7 +2716,7 @@ class BuzzAdapter(BasePlatformAdapter):
     # The gateway hands adapters the triggering message's own id as the reply
     # anchor.  Anchoring to that id is correct for a top-level message (it
     # opens the thread the user expects), but inside an existing thread it
-    # nests a fresh sub-thread under every single answer.  Buzz renders that
+    # nests a fresh sub-thread under every single answer.  Plane renders that
     # as an endless ladder of one-message threads.
     #
     # Fix: remember each inbound message's thread ROOT.  When the trigger was
@@ -2766,7 +2766,7 @@ class BuzzAdapter(BasePlatformAdapter):
             roots.popitem(last=False)
 
     def _resolve_reply_anchor(self, anchor: Optional[str]) -> Optional[str]:
-        """Map a gateway reply anchor onto the right Buzz thread anchor.
+        """Map a gateway reply anchor onto the right Plane thread anchor.
 
         Returns the thread root when the triggering message was already inside
         a thread (so the reply joins it), otherwise the anchor unchanged (so a
@@ -2838,7 +2838,7 @@ class BuzzAdapter(BasePlatformAdapter):
         Each object is independent: one failed download is logged and skipped
         without discarding the caption or any other successfully cached files.
 
-        Downloading spends this agent's Buzz credentials on a URL chosen by
+        Downloading spends this agent's Plane credentials on a URL chosen by
         the sender, so it runs only when the gateway's authorization callback
         returns an explicit ``True``. The adapter's own ``allowed_users``
         list is a pre-filter, not a substitute: a missing, failed, or
@@ -2851,7 +2851,7 @@ class BuzzAdapter(BasePlatformAdapter):
 
         if self._is_sender_authorized(user_id, chat_type, chat_id) is not True:
             logger.warning(
-                "Buzz: not localizing %d media reference(s) in message %s — "
+                "Plane: not localizing %d media reference(s) in message %s — "
                 "sender %s… is not explicitly authorized",
                 len(urls), message_id[:12], (user_id or "?")[:8],
             )
@@ -2874,21 +2874,21 @@ class BuzzAdapter(BasePlatformAdapter):
             ext = (path_match.group("ext") or ".bin").lower()
             label = f"{path_match.group('sha')[:12]}{ext}"
             try:
-                with tempfile.TemporaryDirectory(prefix="nyriel-buzz-media-") as temp_dir:
-                    download_path = Path(temp_dir) / f"buzz_{label}"
+                with tempfile.TemporaryDirectory(prefix="nyriel-plane-media-") as temp_dir:
+                    download_path = Path(temp_dir) / f"plane_{label}"
                     code, _out, _err = await self._run_cli(
                         ["media", "get", "-o", str(download_path), url]
                     )
                     if code != 0 or not download_path.is_file():
                         logger.warning(
-                            "Buzz: failed to localize inbound media %s (exit %d)",
+                            "Plane: failed to localize inbound media %s (exit %d)",
                             label,
                             code,
                         )
                         continue
                     validate_inbound_media_size(
                         download_path.stat().st_size,
-                        media_type="Buzz media",
+                        media_type="Plane media",
                     )
                     mime_type = (
                         mimetypes.guess_type(download_path.name)[0]
@@ -2901,14 +2901,14 @@ class BuzzAdapter(BasePlatformAdapter):
                     )
             except Exception as exc:
                 logger.warning(
-                    "Buzz: failed to localize inbound media %s (%s)",
+                    "Plane: failed to localize inbound media %s (%s)",
                     label,
                     type(exc).__name__,
                 )
                 continue
 
             if cached is None:
-                logger.warning("Buzz: rejected invalid inbound media %s", label)
+                logger.warning("Plane: rejected invalid inbound media %s", label)
                 continue
             media_urls.append(cached.path)
             media_types.append(cached.media_type)
@@ -2916,7 +2916,7 @@ class BuzzAdapter(BasePlatformAdapter):
 
         if media_urls:
             logger.info(
-                "Buzz: localized %d inbound media attachment(s) for message %s",
+                "Plane: localized %d inbound media attachment(s) for message %s",
                 len(media_urls),
                 message_id[:12],
             )
@@ -2936,7 +2936,7 @@ class BuzzAdapter(BasePlatformAdapter):
             cleaned_text = (
                 "(attachment)"
                 if media_urls
-                else "(Buzz media attachment unavailable)"
+                else "(Plane media attachment unavailable)"
             )
         return cleaned_text, media_urls, media_types, message_type
 
@@ -3020,15 +3020,15 @@ class BuzzAdapter(BasePlatformAdapter):
         try:
             await self.send_reaction(chat_id, message_id, "👀")
         except Exception:
-            logger.debug("Buzz: reaction failed for message %s", message_id[:12], exc_info=True)
+            logger.debug("Plane: reaction failed for message %s", message_id[:12], exc_info=True)
 
 
 # ---------------------------------------------------------------------------
 # Plugin registration
 # ---------------------------------------------------------------------------
 
-def _profile_buzz_extra() -> dict:
-    """Read ``buzz.extra`` from the active profile's config.yaml (scoped path).
+def _profile_plane_extra() -> dict:
+    """Read ``plane.extra`` from the active profile's config.yaml (scoped path).
 
     Only meaningful inside a secondary profile scope, where the nyriel-home
     override points at that profile's home. Used by ``check_requirements``
@@ -3047,27 +3047,27 @@ def _profile_buzz_extra() -> dict:
         return {}
     if not isinstance(cfg, dict):
         return {}
-    buzz = ((cfg.get("gateway") or {}).get("platforms") or {}).get("buzz")
-    if not isinstance(buzz, dict):
+    plane = ((cfg.get("gateway") or {}).get("platforms") or {}).get("plane")
+    if not isinstance(plane, dict):
         return {}
-    extra = buzz.get("extra", buzz)
+    extra = plane.get("extra", plane)
     return extra if isinstance(extra, dict) else {}
 
 
 def check_requirements() -> bool:
-    """Check if Buzz is configured: a relay URL plus a resolvable key."""
+    """Check if Plane is configured: a relay URL plus a resolvable key."""
     if _profile_scoped():
-        # Multiplexed secondary profile (#98738): os.environ's BUZZ_* values
+        # Multiplexed secondary profile (#98738): os.environ's PLANE_* values
         # are the default profile's bridge output and must not satisfy this
         # gate for another profile. Consult the profile's own config.yaml
         # (via the scoped home override) and its secret scope instead; an
         # unconfigured profile fails closed.
-        extra = _profile_buzz_extra()
+        extra = _profile_plane_extra()
         relay = str(extra.get("relay_url") or "").strip()
         return bool(relay and _resolve_private_key(extra))
     # Scope-aware read: the gate runs before per-profile scopes install, and
-    # BUZZ_RELAY_URL can be externally managed just like the key (#95216).
-    if not (_get_scoped_secret("BUZZ_RELAY_URL", "") or "").strip():
+    # PLANE_RELAY_URL can be externally managed just like the key (#95216).
+    if not (_get_scoped_secret("PLANE_RELAY_URL", "") or "").strip():
         return False
     return bool(_resolve_private_key())
 
@@ -3079,76 +3079,76 @@ def validate_config(config) -> bool:
     # unscoped, the env read gains the external-secret rung so a managed
     # relay passes too (#95216).
     if _profile_scoped():
-        relay = _scoped_platform_setting("BUZZ_RELAY_URL", extra, "relay_url")
+        relay = _scoped_platform_setting("PLANE_RELAY_URL", extra, "relay_url")
         relay = relay if relay is not None else extra.get("relay_url", "")
     else:
-        relay = _get_scoped_secret("BUZZ_RELAY_URL", "") or extra.get("relay_url", "")
+        relay = _get_scoped_secret("PLANE_RELAY_URL", "") or extra.get("relay_url", "")
     return bool(relay and _resolve_private_key(extra))
 
 
 def is_connected(config) -> bool:
-    """Check whether Buzz is configured (env or config.yaml)."""
+    """Check whether Plane is configured (env or config.yaml)."""
     return validate_config(config)
 
 
-def _apply_yaml_config(yaml_cfg: dict, buzz_cfg: dict) -> Optional[dict]:
-    """Translate ``config.yaml`` ``buzz.extra`` keys into ``BUZZ_*`` env vars.
+def _apply_yaml_config(yaml_cfg: dict, plane_cfg: dict) -> Optional[dict]:
+    """Translate ``config.yaml`` ``plane.extra`` keys into ``PLANE_*`` env vars.
 
     Implements the ``apply_yaml_config_fn`` contract.  ``check_requirements``
     and the adapter's connect path read configuration from the environment, so
-    a config.yaml-only setup (no ``BUZZ_*`` env vars beyond the secret) would
+    a config.yaml-only setup (no ``PLANE_*`` env vars beyond the secret) would
     otherwise fail the ``check_fn`` gate and be silently skipped at gateway
     startup.  This hook bridges the ``extra`` block into env, mirroring the
     Slack/Telegram pattern.  Env vars win over YAML — every assignment is
     guarded by ``not os.getenv(...)`` so explicit env overrides survive a
-    config.yaml update.  ``BUZZ_PRIVATE_KEY`` is a secret and stays in ``.env``;
+    config.yaml update.  ``PLANE_PRIVATE_KEY`` is a secret and stays in ``.env``;
     it is never sourced from config.yaml here.
     """
-    extra = buzz_cfg.get("extra", buzz_cfg) or {}
+    extra = plane_cfg.get("extra", plane_cfg) or {}
     if not isinstance(extra, dict):
         return None
     # Under multiplex, a secondary profile's config loads inside its runtime
     # scope; its values must NOT be written to the process-global env, where
     # first-writer-wins would pin them for every other profile (issue #72348
-    # Telegram/Discord mirror, Buzz side of #98738). Its adapter reads the
+    # Telegram/Discord mirror, Plane side of #98738). Its adapter reads the
     # profile's PlatformConfig.extra directly instead.
     _skip_env_bridge = _profile_scoped()
     _str_keys = {
-        "relay_url": "BUZZ_RELAY_URL",
-        "cli_path": "BUZZ_CLI_PATH",
-        "home_channel": "BUZZ_HOME_CHANNEL",
-        "transport": "BUZZ_TRANSPORT",
+        "relay_url": "PLANE_RELAY_URL",
+        "cli_path": "PLANE_CLI_PATH",
+        "home_channel": "PLANE_HOME_CHANNEL",
+        "transport": "PLANE_TRANSPORT",
     }
     for src, env in _str_keys.items():
         val = extra.get(src)
         if val and not _skip_env_bridge and not os.getenv(env):
             os.environ[env] = str(val)
     interval = extra.get("poll_interval")
-    if interval is not None and not _skip_env_bridge and not os.getenv("BUZZ_POLL_INTERVAL"):
-        os.environ["BUZZ_POLL_INTERVAL"] = str(interval)
+    if interval is not None and not _skip_env_bridge and not os.getenv("PLANE_POLL_INTERVAL"):
+        os.environ["PLANE_POLL_INTERVAL"] = str(interval)
     channels = extra.get("channels")
-    if channels is not None and not _skip_env_bridge and not os.getenv("BUZZ_CHANNELS"):
+    if channels is not None and not _skip_env_bridge and not os.getenv("PLANE_CHANNELS"):
         if isinstance(channels, (list, tuple)):
             channels = ",".join(str(c) for c in channels)
-        os.environ["BUZZ_CHANNELS"] = str(channels)
+        os.environ["PLANE_CHANNELS"] = str(channels)
     allowed = extra.get("allowed_users")
-    if allowed is not None and not _skip_env_bridge and not os.getenv("BUZZ_ALLOWED_USERS"):
+    if allowed is not None and not _skip_env_bridge and not os.getenv("PLANE_ALLOWED_USERS"):
         if isinstance(allowed, (list, tuple)):
             allowed = ",".join(str(a) for a in allowed)
-        os.environ["BUZZ_ALLOWED_USERS"] = str(allowed)
+        os.environ["PLANE_ALLOWED_USERS"] = str(allowed)
     reaction_only = extra.get("reaction_only_users")
-    if reaction_only is not None and not _skip_env_bridge and not os.getenv("BUZZ_REACTION_ONLY_USERS"):
+    if reaction_only is not None and not _skip_env_bridge and not os.getenv("PLANE_REACTION_ONLY_USERS"):
         if isinstance(reaction_only, (list, tuple)):
             reaction_only = ",".join(str(v) for v in reaction_only)
-        os.environ["BUZZ_REACTION_ONLY_USERS"] = str(reaction_only)
-    if "allow_all_users" in extra and not _skip_env_bridge and not os.getenv("BUZZ_ALLOW_ALL_USERS"):
-        os.environ["BUZZ_ALLOW_ALL_USERS"] = str(extra["allow_all_users"]).lower()
-    if "require_mention" in extra and not _skip_env_bridge and not os.getenv("BUZZ_REQUIRE_MENTION"):
-        os.environ["BUZZ_REQUIRE_MENTION"] = str(extra["require_mention"]).lower()
-    if "reply_in_thread" in extra and not os.getenv("BUZZ_REPLY_IN_THREAD"):
-        os.environ["BUZZ_REPLY_IN_THREAD"] = str(extra["reply_in_thread"]).lower()
-    if "reply_to_mode" in extra and not os.getenv("BUZZ_REPLY_TO_MODE"):
-        os.environ["BUZZ_REPLY_TO_MODE"] = str(extra["reply_to_mode"]).lower()
+        os.environ["PLANE_REACTION_ONLY_USERS"] = str(reaction_only)
+    if "allow_all_users" in extra and not _skip_env_bridge and not os.getenv("PLANE_ALLOW_ALL_USERS"):
+        os.environ["PLANE_ALLOW_ALL_USERS"] = str(extra["allow_all_users"]).lower()
+    if "require_mention" in extra and not _skip_env_bridge and not os.getenv("PLANE_REQUIRE_MENTION"):
+        os.environ["PLANE_REQUIRE_MENTION"] = str(extra["require_mention"]).lower()
+    if "reply_in_thread" in extra and not os.getenv("PLANE_REPLY_IN_THREAD"):
+        os.environ["PLANE_REPLY_IN_THREAD"] = str(extra["reply_in_thread"]).lower()
+    if "reply_to_mode" in extra and not os.getenv("PLANE_REPLY_TO_MODE"):
+        os.environ["PLANE_REPLY_TO_MODE"] = str(extra["reply_to_mode"]).lower()
     return None
 
 
@@ -3157,40 +3157,40 @@ def _env_enablement() -> Optional[dict]:
 
     Called BEFORE adapter construction so env-only setups show up in
     ``nyriel gateway status`` and ``get_connected_platforms()``.  Returns
-    ``None`` when Buzz isn't minimally configured.
+    ``None`` when Plane isn't minimally configured.
 
     The special ``home_channel`` key is handled by the core hook — it becomes
     a proper ``HomeChannel`` on the ``PlatformConfig``.
     """
     if _profile_scoped():
-        # Secondary profile scope (#98738): the process env's BUZZ_* values
+        # Secondary profile scope (#98738): the process env's PLANE_* values
         # are the default profile's configuration, not this profile's — env
-        # enablement must not fabricate a Buzz platform for a profile that
+        # enablement must not fabricate a Plane platform for a profile that
         # did not configure one.
         return None
-    relay = os.getenv("BUZZ_RELAY_URL", "").strip()
+    relay = os.getenv("PLANE_RELAY_URL", "").strip()
     if not relay or not _resolve_private_key():
         return None
     seed: dict = {"relay_url": relay}
-    channels = os.getenv("BUZZ_CHANNELS", "").strip()
+    channels = os.getenv("PLANE_CHANNELS", "").strip()
     if channels:
         seed["channels"] = [c.strip() for c in channels.split(",") if c.strip()]
-    interval = os.getenv("BUZZ_POLL_INTERVAL", "").strip()
+    interval = os.getenv("PLANE_POLL_INTERVAL", "").strip()
     if interval:
         try:
             seed["poll_interval"] = float(interval)
         except ValueError:
             pass
-    cli_path = os.getenv("BUZZ_CLI_PATH", "").strip()
+    cli_path = os.getenv("PLANE_CLI_PATH", "").strip()
     if cli_path:
         seed["cli_path"] = cli_path
-    # Home channel for deliver=buzz cron jobs; defaults to the first watched
+    # Home channel for deliver=plane cron jobs; defaults to the first watched
     # channel so env-only setups get a sensible target without extra config.
-    home = os.getenv("BUZZ_HOME_CHANNEL", "").strip() or (seed.get("channels") or [""])[0]
+    home = os.getenv("PLANE_HOME_CHANNEL", "").strip() or (seed.get("channels") or [""])[0]
     if home:
         seed["home_channel"] = {
             "chat_id": home,
-            "name": os.getenv("BUZZ_HOME_CHANNEL_NAME", home),
+            "name": os.getenv("PLANE_HOME_CHANNEL_NAME", home),
         }
     return seed
 
@@ -3207,38 +3207,38 @@ async def _standalone_send(
     """One-shot send without a live adapter (out-of-process cron delivery).
 
     Used by ``tools/send_message_tool`` when ``nyriel cron`` runs separately
-    from the gateway process.  Without this hook, ``deliver=buzz`` cron jobs
-    fail with ``No live adapter for platform 'buzz'``.
+    from the gateway process.  Without this hook, ``deliver=plane`` cron jobs
+    fail with ``No live adapter for platform 'plane'``.
     """
     extra = getattr(pconfig, "extra", {}) or {}
-    _relay_raw = _scoped_platform_setting("BUZZ_RELAY_URL", extra, "relay_url")
+    _relay_raw = _scoped_platform_setting("PLANE_RELAY_URL", extra, "relay_url")
     relay = (_relay_raw or extra.get("relay_url", "")).strip()
     private_key = _resolve_private_key(extra)
-    _cli_raw = _scoped_platform_setting("BUZZ_CLI_PATH", extra, "cli_path")
+    _cli_raw = _scoped_platform_setting("PLANE_CLI_PATH", extra, "cli_path")
     try:
         auth_tag = _resolve_auth_tag(extra)
     except ValueError as exc:
-        return {"error": f"Buzz standalone send: {exc}"}
+        return {"error": f"Plane standalone send: {exc}"}
     cli_path = _resolve_cli_path(
         str(_cli_raw or "").strip() or str(extra.get("cli_path", "") or "")
     )
     if not relay or not private_key:
-        return {"error": "Buzz standalone send: BUZZ_RELAY_URL and BUZZ_PRIVATE_KEY must be configured"}
+        return {"error": "Plane standalone send: PLANE_RELAY_URL and PLANE_PRIVATE_KEY must be configured"}
     if not cli_path:
-        return {"error": "Buzz standalone send: buzz CLI binary not found"}
-    _home_raw = _scoped_platform_setting("BUZZ_HOME_CHANNEL", extra, "home_channel")
+        return {"error": "Plane standalone send: plane CLI binary not found"}
+    _home_raw = _scoped_platform_setting("PLANE_HOME_CHANNEL", extra, "home_channel")
     target = (chat_id or "").strip() or (_home_raw or str(extra.get("home_channel", "") or "")).strip()
     if not target:
-        return {"error": "Buzz standalone send: no target channel (set BUZZ_HOME_CHANNEL)"}
+        return {"error": "Plane standalone send: no target channel (set PLANE_HOME_CHANNEL)"}
 
     args = ["messages", "send", "--channel", target, "--content", "-"]
     # Same reply_to_mode / reply_in_thread gate as the live adapter, so
-    # out-of-process cron delivery (deliver=buzz) doesn't thread when the
+    # out-of-process cron delivery (deliver=plane) doesn't thread when the
     # operator asked for flat channel replies.
-    _rtm = (os.getenv("BUZZ_REPLY_TO_MODE")
+    _rtm = (os.getenv("PLANE_REPLY_TO_MODE")
             or getattr(pconfig, "reply_to_mode", "first") or "first")
     _rtm = str(_rtm).strip().lower()
-    _rit = os.getenv("BUZZ_REPLY_IN_THREAD")
+    _rit = os.getenv("PLANE_REPLY_IN_THREAD")
     if _rit is None:
         _rit = extra.get("reply_in_thread")
     if _rit is not None and str(_rit).strip().lower() in ("false", "0", "no", "off"):
@@ -3249,7 +3249,7 @@ async def _standalone_send(
         path = media[0] if isinstance(media, (list, tuple)) and media else media
         args += ["--file", str(path)]
     try:
-        code, out, err = await _exec_buzz(
+        code, out, err = await _exec_plane(
             cli_path,
             args,
             relay_url=relay,
@@ -3261,10 +3261,10 @@ async def _standalone_send(
             escaped = _escape_unresolved_presentation_mention(message, err)
             if escaped is not None:
                 logger.info(
-                    "Buzz: retrying standalone message after unresolved "
+                    "Plane: retrying standalone message after unresolved "
                     "presentation-mention preflight"
                 )
-                code, out, err = await _exec_buzz(
+                code, out, err = await _exec_plane(
                     cli_path,
                     args,
                     relay_url=relay,
@@ -3275,12 +3275,12 @@ async def _standalone_send(
         raise
     except OSError as e:
         detail = _bounded_cli_message(str(e))
-        return {"error": f"Buzz standalone send failed to launch CLI: {detail}"}
+        return {"error": f"Plane standalone send failed to launch CLI: {detail}"}
     if code != 0:
-        return {"error": f"Buzz standalone send failed: {_cli_error_message(err, code)}"}
+        return {"error": f"Plane standalone send failed: {_cli_error_message(err, code)}"}
     event_id, receipt_error = _parse_send_receipt(out)
     if receipt_error:
-        return {"error": f"Buzz standalone send failed: {receipt_error}"}
+        return {"error": f"Plane standalone send failed: {receipt_error}"}
     result = {"success": True, "message_id": event_id}
     if media_files:
         result["media_delivered"] = True
@@ -3288,7 +3288,7 @@ async def _standalone_send(
 
 
 def interactive_setup() -> None:
-    """Interactive ``nyriel gateway setup`` flow for the Buzz platform.
+    """Interactive ``nyriel gateway setup`` flow for the Plane platform.
 
     Lazy-imports ``nyriel_cli.setup`` helpers so the plugin stays importable
     in non-CLI contexts (gateway runtime, tests).
@@ -3304,103 +3304,103 @@ def interactive_setup() -> None:
         print_success,
     )
 
-    print_header("Buzz")
-    existing_relay = get_env_value("BUZZ_RELAY_URL")
+    print_header("Plane")
+    existing_relay = get_env_value("PLANE_RELAY_URL")
     if existing_relay:
-        print_info(f"Buzz: already configured (relay: {existing_relay})")
-        if not prompt_yes_no("Reconfigure Buzz?", False):
+        print_info(f"Plane: already configured (relay: {existing_relay})")
+        if not prompt_yes_no("Reconfigure Plane?", False):
             return
 
-    print_info("Connect Nyriel to a Buzz community (Block's Nostr-based human+agent platform).")
-    print_info("   Requires the buzz CLI binary and a Nostr key that is a community member.")
+    print_info("Connect Nyriel to a Plane community (Oblivion's Nostr-based human+agent platform).")
+    print_info("   Requires the plane CLI binary and a Nostr key that is a community member.")
     print()
 
     relay = prompt(
-        "Relay URL (e.g. https://mycommunity.communities.buzz.xyz)",
+        "Relay URL (e.g. https://plane.0blivion.io)",
         default=existing_relay or "",
     )
     if not relay:
-        print_warning("Relay URL is required — skipping Buzz setup")
+        print_warning("Relay URL is required — skipping Plane setup")
         return
-    save_env_value("BUZZ_RELAY_URL", relay.strip())
+    save_env_value("PLANE_RELAY_URL", relay.strip())
 
     key = prompt("Nostr private key (nsec or hex; leave blank to keep current)", password=True)
     if key:
-        save_env_value("BUZZ_PRIVATE_KEY", key.strip())
+        save_env_value("PLANE_PRIVATE_KEY", key.strip())
     elif not _resolve_private_key():
-        print_warning("No private key configured — set BUZZ_PRIVATE_KEY before starting the gateway")
+        print_warning("No private key configured — set PLANE_PRIVATE_KEY before starting the gateway")
 
     channels = prompt(
         "Channel UUIDs to watch (comma-separated, empty = all joined channels)",
-        default=get_env_value("BUZZ_CHANNELS") or "",
+        default=get_env_value("PLANE_CHANNELS") or "",
     )
     if channels:
-        save_env_value("BUZZ_CHANNELS", channels.replace(" ", ""))
+        save_env_value("PLANE_CHANNELS", channels.replace(" ", ""))
 
     home = prompt(
         "Home channel UUID for cron/notification delivery (optional)",
-        default=get_env_value("BUZZ_HOME_CHANNEL") or "",
+        default=get_env_value("PLANE_HOME_CHANNEL") or "",
     )
     if home:
-        save_env_value("BUZZ_HOME_CHANNEL", home.strip())
+        save_env_value("PLANE_HOME_CHANNEL", home.strip())
 
     print()
     print_info("🔒 Access control: restrict who can talk to the agent")
     allow_all = prompt_yes_no("Allow all community members to talk to the agent?", False)
     if allow_all:
-        save_env_value("BUZZ_ALLOW_ALL_USERS", "true")
-        save_env_value("BUZZ_ALLOWED_USERS", "")
+        save_env_value("PLANE_ALLOW_ALL_USERS", "true")
+        save_env_value("PLANE_ALLOWED_USERS", "")
         print_warning("⚠️  Open access — anyone in the community can command the agent.")
     else:
-        save_env_value("BUZZ_ALLOW_ALL_USERS", "false")
+        save_env_value("PLANE_ALLOW_ALL_USERS", "false")
         allowed = prompt(
             "Allowed users (comma-separated npubs or hex pubkeys, empty to deny everyone)",
-            default=get_env_value("BUZZ_ALLOWED_USERS") or "",
+            default=get_env_value("PLANE_ALLOWED_USERS") or "",
         )
-        save_env_value("BUZZ_ALLOWED_USERS", allowed.replace(" ", "") if allowed else "")
+        save_env_value("PLANE_ALLOWED_USERS", allowed.replace(" ", "") if allowed else "")
 
     print()
-    print_success("Buzz configuration saved to ~/.nyriel/.env")
+    print_success("Plane configuration saved to ~/.nyriel/.env")
     print_info("Restart the gateway for changes to take effect: nyriel gateway restart")
 
 
 def register(ctx):
     """Plugin entry point: called by the Nyriel plugin system."""
     ctx.register_platform(
-        name="buzz",
-        label="Buzz",
-        adapter_factory=lambda cfg: BuzzAdapter(cfg),
+        name="plane",
+        label="Plane",
+        adapter_factory=lambda cfg: PlaneAdapter(cfg),
         check_fn=check_requirements,
         validate_config=validate_config,
         is_connected=is_connected,
-        required_env=["BUZZ_RELAY_URL", "BUZZ_PRIVATE_KEY"],
-        install_hint="Requires the buzz CLI binary (https://github.com/block/buzz) on PATH or at BUZZ_CLI_PATH",
+        required_env=["PLANE_RELAY_URL", "PLANE_PRIVATE_KEY"],
+        install_hint="Requires the plane CLI binary (https://github.com/block/buzz) on PATH or at PLANE_CLI_PATH",
         setup_fn=interactive_setup,
         # Env-driven auto-configuration: seeds PlatformConfig.extra with
         # relay/channels/poll interval + home_channel so env-only setups show
         # up in gateway status without instantiating the adapter.
         env_enablement_fn=_env_enablement,
-        # Bridge config.yaml buzz.extra -> BUZZ_* env vars so check_fn and the
+        # Bridge config.yaml plane.extra -> PLANE_* env vars so check_fn and the
         # env-driven connect path work for config.yaml-only setups (secret stays
-        # in .env). Without this the check_fn gate skips Buzz at startup.
+        # in .env). Without this the check_fn gate skips Plane at startup.
         apply_yaml_config_fn=_apply_yaml_config,
-        # Cron home-channel delivery support (deliver=buzz).
-        cron_deliver_env_var="BUZZ_HOME_CHANNEL",
-        # Out-of-process cron delivery.  Without this hook, deliver=buzz
+        # Cron home-channel delivery support (deliver=plane).
+        cron_deliver_env_var="PLANE_HOME_CHANNEL",
+        # Out-of-process cron delivery.  Without this hook, deliver=plane
         # cron jobs fail with "No live adapter" when cron runs separately
         # from the gateway.
         standalone_sender_fn=_standalone_send,
         # Auth env vars for _is_user_authorized() integration
-        allowed_users_env="BUZZ_ALLOWED_USERS",
-        allow_all_env="BUZZ_ALLOW_ALL_USERS",
+        allowed_users_env="PLANE_ALLOWED_USERS",
+        allow_all_env="PLANE_ALLOW_ALL_USERS",
         # Display
         emoji="🐝",
-        # Buzz identities are pubkeys, not phone numbers
+        # Plane identities are pubkeys, not phone numbers
         pii_safe=False,
         allow_update_command=True,
         # LLM guidance
         platform_hint=(
-            "You are collaborating in a Buzz workspace (Block's Nostr-based "
+            "You are collaborating in a Plane workspace (Oblivion's Nostr-based "
             "human+agent platform). Markdown IS supported. Users address you "
             "by @-mentioning your name or npub in channels; direct messages "
             "reach you without a mention. Keep responses conversational."

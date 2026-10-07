@@ -50,6 +50,8 @@ from __future__ import annotations
 
 import posixpath
 
+from . import plane_rules  # PLANE family (WO-BRAIN/PLANE-RENAME-1)
+
 # --- HERMES family: product rename (longest match first) ---
 HERMES_RULES: list[tuple[str, str]] = [
     # The product's "agent" suffix becomes "brain" (Nyriel Brain), so the
@@ -119,7 +121,7 @@ def swap_path(path: str) -> str:
     """Apply the case-aware path rebrand to a single tree path."""
     for find, repl in PATH_RULES:
         path = path.replace(find, repl)
-    return path
+    return plane_rules.swap_path(path)
 
 
 def _is_legal_file(nyriel_path: str) -> bool:
@@ -160,7 +162,7 @@ def swap_text(text: str, nyriel_path: str, attribution: bool = True) -> str:
     if attribution:
         for find, repl in ATTRIBUTION_RULES:
             text = text.replace(find, repl)
-    return text
+    return plane_rules.swap_text(text, nyriel_path)
 
 
 def looks_binary(data: bytes) -> bool:

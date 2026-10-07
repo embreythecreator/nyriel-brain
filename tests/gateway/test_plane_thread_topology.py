@@ -1,4 +1,4 @@
-"""E2E regression tests for the Buzz thread-topology salvage cluster.
+"""E2E regression tests for the Plane thread-topology salvage cluster.
 
 Covers the composed behavior of PRs #77080 / #79578 / #80120 / #85613 /
 #86232 / #89868 (+ issues #75082, #95841, #95842):
@@ -9,7 +9,7 @@ Covers the composed behavior of PRs #77080 / #79578 / #80120 / #85613 /
 2. reply_in_thread / reply_to_mode config honoring — the opt-out posts
    flat on every send path, including progress routing and the
    out-of-process cron sender.
-3. _PLATFORM_DEFAULTS coverage — buzz no longer inherits the verbose
+3. _PLATFORM_DEFAULTS coverage — plane no longer inherits the verbose
    _GLOBAL_DEFAULTS (#95841).
 
 Uses the real adapter module (no gateway process) with synthetic NIP-10
@@ -27,17 +27,17 @@ from unittest.mock import AsyncMock
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
-def _load_buzz_module():
-    path = REPO_ROOT / "plugins" / "platforms" / "buzz" / "adapter.py"
-    spec = importlib.util.spec_from_file_location("plugin_adapter_buzz_threads", path)
+def _load_plane_module():
+    path = REPO_ROOT / "plugins" / "platforms" / "plane" / "adapter.py"
+    spec = importlib.util.spec_from_file_location("plugin_adapter_plane_threads", path)
     module = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = module
     spec.loader.exec_module(module)
     return module
 
 
-_buzz_mod = _load_buzz_module()
-BuzzAdapter = _buzz_mod.BuzzAdapter
+_plane_mod = _load_plane_module()
+PlaneAdapter = _plane_mod.PlaneAdapter
 
 CHANNEL = "ccc2bc1a-7a82-5a8f-8c4e-57a070cbe7cd"
 SELF_PUBKEY = "9fd5c7ba6d3ef224da78f541e0fcb9c50f72cc63edb19aae76ac6a0474dfa860"
@@ -49,14 +49,14 @@ MID_EVT = "c" * 64
 @pytest.fixture(autouse=True)
 def _no_ambient_env(monkeypatch, tmp_path):
     for var in (
-        "BUZZ_RELAY_URL", "BUZZ_CHANNELS", "BUZZ_HOME_CHANNEL",
-        "BUZZ_POLL_INTERVAL", "BUZZ_CLI_PATH", "BUZZ_CREDENTIALS_FILE",
-        "BUZZ_ALLOWED_USERS", "BUZZ_ALLOW_ALL_USERS", "BUZZ_PRIVATE_KEY",
-        "BUZZ_REQUIRE_MENTION", "BUZZ_REPLY_IN_THREAD", "BUZZ_REPLY_TO_MODE",
-        "BUZZ_TRANSPORT",
+        "PLANE_RELAY_URL", "PLANE_CHANNELS", "PLANE_HOME_CHANNEL",
+        "PLANE_POLL_INTERVAL", "PLANE_CLI_PATH", "PLANE_CREDENTIALS_FILE",
+        "PLANE_ALLOWED_USERS", "PLANE_ALLOW_ALL_USERS", "PLANE_PRIVATE_KEY",
+        "PLANE_REQUIRE_MENTION", "PLANE_REPLY_IN_THREAD", "PLANE_REPLY_TO_MODE",
+        "PLANE_TRANSPORT",
     ):
         monkeypatch.delenv(var, raising=False)
-    monkeypatch.setattr(_buzz_mod, "_DEFAULT_CREDENTIALS_DIR", tmp_path / "no-creds")
+    monkeypatch.setattr(_plane_mod, "_DEFAULT_CREDENTIALS_DIR", tmp_path / "no-creds")
     yield
 
 
@@ -68,9 +68,9 @@ def _make_adapter(extra=None, **cfg_kwargs):
         extra={"relay_url": "https://test.relay", **(extra or {})},
         **cfg_kwargs,
     )
-    adapter = BuzzAdapter(cfg)
+    adapter = PlaneAdapter(cfg)
     adapter._self_pubkey = SELF_PUBKEY
-    adapter._self_npub = _buzz_mod.hex_to_npub(SELF_PUBKEY)
+    adapter._self_npub = _plane_mod.hex_to_npub(SELF_PUBKEY)
     adapter._display_name = "Chip"
     adapter._private_key = "nsec1test"
     return adapter
@@ -229,7 +229,7 @@ class TestReplyThreadingConfig:
 
     @pytest.mark.asyncio
     async def test_env_reply_in_thread_false_wins(self, monkeypatch):
-        monkeypatch.setenv("BUZZ_REPLY_IN_THREAD", "false")
+        monkeypatch.setenv("PLANE_REPLY_IN_THREAD", "false")
         adapter = _make_adapter()
         assert adapter._reply_to_mode == "off"
 
@@ -249,24 +249,24 @@ class TestReplyThreadingConfig:
         assert "--reply-to" not in cli.calls[0][0]
 
     def test_apply_yaml_config_bridges_keys(self, monkeypatch):
-        monkeypatch.delenv("BUZZ_REPLY_IN_THREAD", raising=False)
-        monkeypatch.delenv("BUZZ_REPLY_TO_MODE", raising=False)
-        _buzz_mod._apply_yaml_config(
+        monkeypatch.delenv("PLANE_REPLY_IN_THREAD", raising=False)
+        monkeypatch.delenv("PLANE_REPLY_TO_MODE", raising=False)
+        _plane_mod._apply_yaml_config(
             {}, {"extra": {"reply_in_thread": False, "reply_to_mode": "off"}}
         )
         import os
-        assert os.environ["BUZZ_REPLY_IN_THREAD"] == "false"
-        assert os.environ["BUZZ_REPLY_TO_MODE"] == "off"
-        monkeypatch.delenv("BUZZ_REPLY_IN_THREAD", raising=False)
-        monkeypatch.delenv("BUZZ_REPLY_TO_MODE", raising=False)
+        assert os.environ["PLANE_REPLY_IN_THREAD"] == "false"
+        assert os.environ["PLANE_REPLY_TO_MODE"] == "off"
+        monkeypatch.delenv("PLANE_REPLY_IN_THREAD", raising=False)
+        monkeypatch.delenv("PLANE_REPLY_TO_MODE", raising=False)
 
     @pytest.mark.asyncio
     async def test_standalone_send_honors_opt_out(self, monkeypatch, tmp_path):
         """Out-of-process cron delivery must not thread when opted out."""
-        fake_cli = tmp_path / "buzz"
+        fake_cli = tmp_path / "plane"
         fake_cli.write_text("#!/bin/sh\n")
         fake_cli.chmod(0o755)
-        monkeypatch.setenv("BUZZ_REPLY_IN_THREAD", "false")
+        monkeypatch.setenv("PLANE_REPLY_IN_THREAD", "false")
 
         captured = {}
 
@@ -274,19 +274,19 @@ class TestReplyThreadingConfig:
             captured["args"] = args
             return 0, json.dumps({"accepted": True, "event_id": "evt-cron"}), ""
 
-        monkeypatch.setattr(_buzz_mod, "_exec_buzz", fake_exec)
+        monkeypatch.setattr(_plane_mod, "_exec_plane", fake_exec)
 
         class _PC:
             extra = {"relay_url": "https://test.relay", "cli_path": str(fake_cli)}
 
-        monkeypatch.setenv("BUZZ_PRIVATE_KEY", "nsec1test")
-        result = await _buzz_mod._standalone_send(_PC(), CHANNEL, "cron msg", thread_id="evt-1")
+        monkeypatch.setenv("PLANE_PRIVATE_KEY", "nsec1test")
+        result = await _plane_mod._standalone_send(_PC(), CHANNEL, "cron msg", thread_id="evt-1")
         assert result.get("success") is True
         assert "--reply-to" not in captured["args"]
 
     @pytest.mark.asyncio
     async def test_standalone_send_threads_by_default(self, monkeypatch, tmp_path):
-        fake_cli = tmp_path / "buzz"
+        fake_cli = tmp_path / "plane"
         fake_cli.write_text("#!/bin/sh\n")
         fake_cli.chmod(0o755)
         captured = {}
@@ -295,13 +295,13 @@ class TestReplyThreadingConfig:
             captured["args"] = args
             return 0, json.dumps({"accepted": True, "event_id": "evt-cron"}), ""
 
-        monkeypatch.setattr(_buzz_mod, "_exec_buzz", fake_exec)
+        monkeypatch.setattr(_plane_mod, "_exec_plane", fake_exec)
 
         class _PC:
             extra = {"relay_url": "https://test.relay", "cli_path": str(fake_cli)}
 
-        monkeypatch.setenv("BUZZ_PRIVATE_KEY", "nsec1test")
-        result = await _buzz_mod._standalone_send(_PC(), CHANNEL, "cron msg", thread_id="evt-1")
+        monkeypatch.setenv("PLANE_PRIVATE_KEY", "nsec1test")
+        result = await _plane_mod._standalone_send(_PC(), CHANNEL, "cron msg", thread_id="evt-1")
         assert result.get("success") is True
         assert "--reply-to" in captured["args"]
         assert captured["args"][captured["args"].index("--reply-to") + 1] == "evt-1"
@@ -312,19 +312,19 @@ class TestReplyThreadingConfig:
 
 class TestProgressRouting:
 
-    def test_buzz_progress_threads_by_default(self):
+    def test_plane_progress_threads_by_default(self):
         from gateway.run import _resolve_progress_thread_id
 
         assert _resolve_progress_thread_id(
-            "buzz", source_thread_id=None, event_message_id="evt-1",
+            "plane", source_thread_id=None, event_message_id="evt-1",
             reply_in_thread=True,
         ) == "evt-1"
 
-    def test_buzz_progress_flat_when_opted_out(self):
+    def test_plane_progress_flat_when_opted_out(self):
         from gateway.run import _resolve_progress_thread_id
 
         assert _resolve_progress_thread_id(
-            "buzz", source_thread_id=None, event_message_id="evt-1",
+            "plane", source_thread_id=None, event_message_id="evt-1",
             reply_in_thread=False,
         ) is None
 
@@ -334,14 +334,14 @@ class TestProgressRouting:
 
 class TestDisplayDefaults:
 
-    def test_buzz_has_platform_defaults_entry(self):
+    def test_plane_has_platform_defaults_entry(self):
         from gateway.display_config import _PLATFORM_DEFAULTS
 
-        assert "buzz" in _PLATFORM_DEFAULTS
+        assert "plane" in _PLATFORM_DEFAULTS
 
-    def test_buzz_does_not_inherit_verbose_global_tool_progress(self):
+    def test_plane_does_not_inherit_verbose_global_tool_progress(self):
         from gateway.display_config import resolve_display_setting
 
-        # No user config: must come from the buzz platform tier, not the
+        # No user config: must come from the plane platform tier, not the
         # verbose _GLOBAL_DEFAULTS ("all").
-        assert resolve_display_setting({}, "buzz", "tool_progress") != "all"
+        assert resolve_display_setting({}, "plane", "tool_progress") != "all"

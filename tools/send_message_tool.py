@@ -53,9 +53,9 @@ _WHATSAPP_JID_RE = re.compile(
     r"^\s*[\w-]+@(?:g\.us|s\.whatsapp\.net|lid|broadcast|newsletter)\s*$",
     re.IGNORECASE,
 )
-# Buzz channels and DMs use native UUID identifiers. They are explicit
+# Plane channels and DMs use native UUID identifiers. They are explicit
 # targets and must never substitute the configured home channel.
-_BUZZ_UUID_RE = re.compile(
+_PLANE_UUID_RE = re.compile(
     r"^\s*[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\s*$",
     re.IGNORECASE,
 )
@@ -600,7 +600,7 @@ def _parse_target_ref(platform_name: str, target_ref: str):
         # through to the _PHONE_PLATFORMS handler below.
         if _WHATSAPP_JID_RE.fullmatch(target_ref):
             return target_ref.strip(), None, True
-    if platform_name == "buzz" and _BUZZ_UUID_RE.fullmatch(target_ref):
+    if platform_name == "plane" and _PLANE_UUID_RE.fullmatch(target_ref):
         return target_ref.strip(), None, True
     stripped_target = target_ref.strip()
     if platform_name == "signal" and stripped_target.startswith("group:"):
@@ -1466,9 +1466,9 @@ async def _send_to_platform(platform, pconfig, chat_id, message, thread_id=None,
         return last_result
 
     # --- Non-media platforms ---
-    # Buzz is a plugin platform with verified native media delivery through
+    # Plane is a plugin platform with verified native media delivery through
     # _send_via_adapter below, including valid media-only sends.
-    if media_files and not message.strip() and platform.value != "buzz":
+    if media_files and not message.strip() and platform.value != "plane":
         return {
             "error": (
                 f"send_message MEDIA delivery is currently only supported for telegram, discord, matrix, weixin, signal, yuanbao, feishu, whatsapp and slack; "
@@ -1476,7 +1476,7 @@ async def _send_to_platform(platform, pconfig, chat_id, message, thread_id=None,
             )
         }
     warning = None
-    if media_files and platform.value != "buzz":
+    if media_files and platform.value != "plane":
         warning = (
             f"MEDIA attachments were omitted for {platform.value}; "
             "native send_message media delivery is currently only supported for telegram, discord, matrix, weixin, signal, yuanbao, feishu, whatsapp and slack"

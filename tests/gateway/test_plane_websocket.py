@@ -1,9 +1,9 @@
-"""Tests for the Buzz WebSocket transport (NIP-42) and Nostr signing module.
+"""Tests for the Plane WebSocket transport (NIP-42) and Nostr signing module.
 
 The signing module and WS transport were contributed in PR #73636 by
 @ScaleLeanChris and consolidated onto the merged poll-based adapter; these
 tests cover the crypto (against the official BIP-340 vector) and the WS
-lifecycle as wired into BuzzAdapter.
+lifecycle as wired into PlaneAdapter.
 """
 
 import asyncio
@@ -14,14 +14,14 @@ import pytest
 
 from tests.gateway._plugin_adapter_loader import load_plugin_adapter
 
-_buzz_mod = load_plugin_adapter("buzz")
-BuzzAdapter = _buzz_mod.BuzzAdapter
+_plane_mod = load_plugin_adapter("plane")
+PlaneAdapter = _plane_mod.PlaneAdapter
 
 import importlib.util as _ilu
 from pathlib import Path as _Path
 
-_auth_path = _Path(_buzz_mod.__file__).with_name("nostr_auth.py")
-_spec = _ilu.spec_from_file_location("plugin_adapter_buzz_nostr_auth", _auth_path)
+_auth_path = _Path(_plane_mod.__file__).with_name("nostr_auth.py")
+_spec = _ilu.spec_from_file_location("plugin_adapter_plane_nostr_auth", _auth_path)
 nostr_auth = _ilu.module_from_spec(_spec)
 _spec.loader.exec_module(nostr_auth)
 
@@ -35,7 +35,7 @@ def _make_adapter(extra=None):
     from gateway.config import PlatformConfig
 
     cfg = PlatformConfig(enabled=True, extra={"relay_url": "https://test.relay", **(extra or {})})
-    adapter = BuzzAdapter(cfg)
+    adapter = PlaneAdapter(cfg)
     adapter._self_pubkey = SELF_PUBKEY
     adapter._private_key = TEST_PRIVATE_KEY
     adapter._display_name = "Chip"
@@ -145,7 +145,7 @@ async def test_websocket_loop_reconnects_when_read_goes_silent(monkeypatch, capl
     import logging
 
     adapter = _make_adapter()
-    monkeypatch.setattr(_buzz_mod, "_WS_READ_IDLE_TIMEOUT", 0.05)
+    monkeypatch.setattr(_plane_mod, "_WS_READ_IDLE_TIMEOUT", 0.05)
     caplog.set_level(logging.WARNING)
 
     sockets = []
@@ -197,7 +197,7 @@ async def test_websocket_loop_dispatches_frames_and_closes_cleanly(monkeypatch):
     frames = iter(
         [
             json.dumps(
-                ["EVENT", "nyriel-buzz-0", {"id": "e1", "kind": 9, "created_at": 2, "content": "hi"}]
+                ["EVENT", "nyriel-plane-0", {"id": "e1", "kind": 9, "created_at": 2, "content": "hi"}]
             ),
         ]
     )
@@ -275,7 +275,7 @@ async def test_websocket_loop_drops_restricted_channel_without_reconnect():
     adapter._channel_state[CHANNEL] = {"chat_type": "group", "last_ts": 0, "seen": {}}
     adapter._ws_ready = asyncio.Event()
 
-    sub_id = "nyriel-buzz-0"
+    sub_id = "nyriel-plane-0"
     messages = [json.dumps(["CLOSED", sub_id, "restricted: not a channel member"])]
     idx = 0
 
@@ -349,7 +349,7 @@ async def test_websocket_loop_reconnects_on_non_restricted_closed():
     adapter = _make_adapter(extra={"channels": [CHANNEL]})
     adapter._channel_state[CHANNEL] = {"chat_type": "group", "last_ts": 0, "seen": {}}
 
-    sub_id = "nyriel-buzz-0"
+    sub_id = "nyriel-plane-0"
     messages = [json.dumps(["CLOSED", sub_id, "error: server shutting down"])]
     idx = 0
 
@@ -459,13 +459,13 @@ async def test_new_subscription_without_high_water_mark_has_no_since_floor():
             self.sent.append(json.loads(raw))
 
     ws = _Ws()
-    await adapter._send_channel_subscription(ws, "nyriel-buzz-dm-1", CHANNEL)
+    await adapter._send_channel_subscription(ws, "nyriel-plane-dm-1", CHANNEL)
     assert len(ws.sent) == 1
     req_filter = ws.sent[0][2]
     assert "since" not in req_filter, (
         "fresh conversation must not have a since floor (drops the opening message)"
     )
-    assert req_filter.get("limit") == _buzz_mod._FETCH_LIMIT
+    assert req_filter.get("limit") == _plane_mod._FETCH_LIMIT
     assert req_filter["#h"] == [CHANNEL]
 
 
@@ -484,7 +484,7 @@ async def test_seeded_subscription_resumes_from_high_water_mark():
             self.sent.append(json.loads(raw))
 
     ws = _Ws()
-    await adapter._send_channel_subscription(ws, "nyriel-buzz-0", CHANNEL)
+    await adapter._send_channel_subscription(ws, "nyriel-plane-0", CHANNEL)
     req_filter = ws.sent[0][2]
     assert req_filter["since"] == 1_699_999_999
     assert "limit" not in req_filter
@@ -512,7 +512,7 @@ async def test_closed_membership_phrases_prune_without_reconnect(detail):
     adapter = _make_adapter(extra={"channels": [CHANNEL]})
     adapter._channel_state[CHANNEL] = {"chat_type": "group", "last_ts": 0, "seen": {}}
 
-    sub_id = "nyriel-buzz-0"
+    sub_id = "nyriel-plane-0"
     messages = [json.dumps(["CLOSED", sub_id, detail])]
     idx = 0
 
@@ -610,7 +610,7 @@ async def test_ws_discovery_loop_subscribes_newly_discovered_conversation(monkey
         )
 
     monkeypatch.setattr(adapter, "_discover_dms", fake_discover)
-    monkeypatch.setattr(_buzz_mod, "_MIN_POLL_INTERVAL", 0.01)
+    monkeypatch.setattr(_plane_mod, "_MIN_POLL_INTERVAL", 0.01)
 
     class _Ws:
         def __init__(self):
@@ -620,7 +620,7 @@ async def test_ws_discovery_loop_subscribes_newly_discovered_conversation(monkey
             self.sent.append(json.loads(raw))
 
     ws = _Ws()
-    subscriptions = {"nyriel-buzz-0": CHANNEL}
+    subscriptions = {"nyriel-plane-0": CHANNEL}
     task = asyncio.create_task(adapter._ws_discovery_loop(ws, subscriptions))
     try:
         deadline = time.monotonic() + 5.0

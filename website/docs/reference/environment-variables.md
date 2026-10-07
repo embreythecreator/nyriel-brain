@@ -703,21 +703,21 @@ Connect Nyriel to [Photon](https://photon.codes/) / Spectrum (iMessage and other
 | `PHOTON_DASHBOARD_HOST` | Photon Dashboard API host (default `https://app.photon.codes`). |
 | `PHOTON_SPECTRUM_HOST` | Photon Spectrum API host (default `https://spectrum.photon.codes`). |
 
-### Buzz (Nostr communities)
+### Plane (Nostr communities)
 
 | Variable | Description |
 |----------|-------------|
-| `BUZZ_RELAY_URL` | Base URL of the Buzz community relay (e.g. `https://mycommunity.communities.buzz.xyz`) |
-| `BUZZ_PRIVATE_KEY` | Nostr private key for the agent's Buzz identity (nsec or hex) — the only Buzz secret |
-| `BUZZ_CREDENTIALS_FILE` | JSON credentials file holding the nsec (fallback when `BUZZ_PRIVATE_KEY` is unset) |
-| `BUZZ_CHANNELS` | Comma-separated channel UUIDs to watch (default: all joined channels) |
-| `BUZZ_HOME_CHANNEL` | Channel UUID for cron / notification delivery (defaults to the first watched channel) |
-| `BUZZ_ALLOWED_USERS` | Comma-separated npubs or hex pubkeys allowed to talk to the agent |
-| `BUZZ_ALLOW_ALL_USERS` | Allow any community member to talk to the agent (`true`/`false`) |
-| `BUZZ_TRANSPORT` | Inbound transport: `auto` (WebSocket w/ poll fallback, default), `websocket`, or `poll` |
-| `BUZZ_POLL_INTERVAL` | Seconds between inbound poll sweeps (default: `4`) |
-| `BUZZ_AUTH_TAG` | Optional NIP-OA owner-attestation auth tag JSON for NIP-42 WebSocket auth |
-| `BUZZ_CLI_PATH` | Path to the buzz CLI binary (default: `buzz` on PATH, then `~/bin/buzz`) |
+| `PLANE_RELAY_URL` | Base URL of the Plane community relay (e.g. `https://plane.0blivion.io`) |
+| `PLANE_PRIVATE_KEY` | Nostr private key for the agent's Plane identity (nsec or hex) — the only Plane secret |
+| `PLANE_CREDENTIALS_FILE` | JSON credentials file holding the nsec (fallback when `PLANE_PRIVATE_KEY` is unset) |
+| `PLANE_CHANNELS` | Comma-separated channel UUIDs to watch (default: all joined channels) |
+| `PLANE_HOME_CHANNEL` | Channel UUID for cron / notification delivery (defaults to the first watched channel) |
+| `PLANE_ALLOWED_USERS` | Comma-separated npubs or hex pubkeys allowed to talk to the agent |
+| `PLANE_ALLOW_ALL_USERS` | Allow any community member to talk to the agent (`true`/`false`) |
+| `PLANE_TRANSPORT` | Inbound transport: `auto` (WebSocket w/ poll fallback, default), `websocket`, or `poll` |
+| `PLANE_POLL_INTERVAL` | Seconds between inbound poll sweeps (default: `4`) |
+| `PLANE_AUTH_TAG` | Optional NIP-OA owner-attestation auth tag JSON for NIP-42 WebSocket auth |
+| `PLANE_CLI_PATH` | Path to the plane CLI binary (default: `plane` on PATH, then `~/bin/plane`) |
 
 ### Microsoft Teams (adapter)
 
